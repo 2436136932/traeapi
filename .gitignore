@@ -1,0 +1,40 @@
+# 凭证与密钥(绝不 commit)
+auths/
+data/
+config.json
+.env
+*.key
+*.pem
+
+# 二进制
+login
+signin
+credit
+signin_bin
+tw2api
+/server
+
+# 文档(doc 排除上传): 本地 md 不入库,README 除外
+*.md
+!README.md
+docs/*
+!docs/RESEARCH.md
+!docs/logo.svg
+
+# 构建产物
+*.tmp
+__pycache__/
+trae2api-web.exe
+trae2api-web.exe~
+*.exe~
+
+# 本机会话数据（AI 工作记忆等，不入库）
+.codebuddy/
+
+# IDE
+.idea/
+.vscode/
+
+# 任务输入文档
+tickets/
+reference_workbuddy2api/

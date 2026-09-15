@@ -1,0 +1,25 @@
+{
+  "listen": ":7864",
+  "auth_dir": "./auths",
+  "state_file": "./data/state.json",
+  "default_model": "glm-5.2",
+
+  "model_rates": {
+    "glm-5.2": 1.0,
+    "glm-5.3": 1.5
+  },
+  "cooldown": {
+    "plan_credit": "12h",
+    "soft_rate": "60s",
+    "err_threshold": 3,
+    "err_cooldown": "10m"
+  },
+  "schedule": {
+    "checkin_hour": 9,
+    "refresh_hours": [3],
+    "checkin_retry_minutes": 30
+  },
+  "upstream": {
+    "timeout_seconds": 120
+  }
+}
