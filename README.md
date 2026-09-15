@@ -1,9 +1,5 @@
 <div align="center">
 
-<img src="./docs/logo.svg" alt="trae2api-web logo" width="110" height="110" />
-
-# trae2api-web
-
 **把 TRAE SOLO 对话通道包装成 OpenAI 兼容 API，自带 Web 管理面板**
 
 </div>
