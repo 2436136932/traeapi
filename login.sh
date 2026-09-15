@@ -22,7 +22,7 @@ fi
 
 cd "$(dirname "$0")"
 AUTH_DIR="./auths"
-CONTAINER="trae2api-web"
+CONTAINER="traeapi"
 CLIENT_ID="en1oxy7wnw8j9n"          # SOLO stable
 APP_VERSION="0.1.52"
 API_HOST="https://api.trae.com.cn"  # ExchangeToken / GetUserInfo host（auth.apiHost）

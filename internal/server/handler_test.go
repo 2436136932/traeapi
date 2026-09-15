@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"trae2api-web/internal/auth"
-	"trae2api-web/internal/pool"
-	"trae2api-web/internal/upstream"
+	"traeapi/internal/auth"
+	"traeapi/internal/pool"
+	"traeapi/internal/upstream"
 )
 
 // 模拟 SOLO SSE 响应（glm-5.2 回答"你好"）。

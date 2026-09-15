@@ -38,14 +38,14 @@ func authorizeRender(w http.ResponseWriter, status int, title, detail string) {
 	// 极简内联 HTML，无外部依赖；样式 token 与 admin.html 接近。
 	html := `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
-		`<title>trae2api-web 登录</title><style>` +
+		`<title>traeapi 登录</title><style>` +
 		`body{background:#0f1115;color:#e6e9ef;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;` +
 		`display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}` +
 		`.box{max-width:480px;padding:32px;text-align:center}` +
 		`h1{font-size:20px;font-weight:600;margin:0 0 12px}` +
 		`p{color:#8a93a6;line-height:1.6;margin:0 0 8px;word-break:break-all}` +
 		`</style></head><body><div class="box"><h1>` + title + `</h1><p>` + detail + `</p>` +
-		`<p style="margin-top:20px;font-size:12px">窗口可关闭并返回 trae2api-web 控制台。</p>` +
+		`<p style="margin-top:20px;font-size:12px">窗口可关闭并返回 traeapi 控制台。</p>` +
 		`<script>try{setTimeout(function(){window.close()},3000);}catch(e){}</script>` +
 		`</div></body></html>`
 	_, _ = w.Write([]byte(html))

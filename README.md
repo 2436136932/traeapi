@@ -1,5 +1,7 @@
 <div align="center">
 
+# traeapi
+
 **把 TRAE SOLO 对话通道包装成 OpenAI 兼容 API，自带 Web 管理面板**
 
 </div>
@@ -37,15 +39,15 @@ docker compose up -d --build
 ```bash
 # Linux / macOS
 export TW2A_API_KEY="your_secure_api_key"
-go build -o trae2api-web ./cmd/server
-./trae2api-web
+go build -o traeapi ./cmd/server
+./traeapi
 ```
 
 ```powershell
 # Windows PowerShell
 $env:TW2A_API_KEY = "your_secure_api_key"
-go build -o trae2api-web.exe ./cmd/server
-.\trae2api-web.exe
+go build -o traeapi.exe ./cmd/server
+.\traeapi.exe
 ```
 
 > 本地直接运行**不会读取 `.env`**，密钥必须用环境变量传入（`.env` 只供 `docker compose` 取值）。`config.json` 与 `auths/` 目录不存在也能正常启动，会使用内置默认配置。

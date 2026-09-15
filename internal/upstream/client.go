@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 // ErrKind 错误分类，pool 据此决定冷却时长（SPEC §4.3）。

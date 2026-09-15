@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 // pendingState pending 登录状态。

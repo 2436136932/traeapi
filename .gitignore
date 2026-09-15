@@ -11,7 +11,7 @@ login
 signin
 credit
 signin_bin
-tw2api
+traeapi
 /server
 
 # 文档(doc 排除上传): 本地 md 不入库,README 除外
@@ -24,6 +24,9 @@ docs/*
 # 构建产物
 *.tmp
 __pycache__/
+traeapi.exe
+traeapi.exe~
+# 改名前的旧二进制（trae2api-web → traeapi），保留忽略避免误提交
 trae2api-web.exe
 trae2api-web.exe~
 *.exe~

@@ -1,5 +1,5 @@
 @echo off
-rem trae2api-web one-click STOP launcher (double-click friendly).
+rem traeapi one-click STOP launcher (double-click friendly).
 rem NOTE: keep this file pure ASCII. cmd.exe reads .cmd as ANSI/GBK,
 rem so non-ASCII comments get garbled and break command parsing.
 rem

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 // CoolKind 冷却类型。

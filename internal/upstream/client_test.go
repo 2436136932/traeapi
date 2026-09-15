@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 func TestClassify(t *testing.T) {

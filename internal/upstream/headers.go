@@ -4,7 +4,7 @@ package upstream
 import (
 	"net/http"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 const clientUA = "Trae/" + IdeVersion

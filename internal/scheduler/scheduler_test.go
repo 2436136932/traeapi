@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"trae2api-web/internal/auth"
-	"trae2api-web/internal/pool"
-	"trae2api-web/internal/upstream"
+	"traeapi/internal/auth"
+	"traeapi/internal/pool"
+	"traeapi/internal/upstream"
 )
 
 func TestNextFire(t *testing.T) {

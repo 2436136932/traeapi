@@ -1,5 +1,5 @@
 ﻿<#
-    trae2api-web 一键启动脚本（Windows / PowerShell）
+    traeapi 一键启动脚本（Windows / PowerShell）
 
     用法:
         .\start.ps1                 后台启动（默认，关闭终端不退出）
@@ -24,9 +24,9 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
-$ExeName    = 'trae2api-web.exe'
+$ExeName    = 'traeapi.exe'
 $ExePath    = Join-Path $PSScriptRoot $ExeName
-$ProcName   = 'trae2api-web'
+$ProcName   = 'traeapi'
 $DataDir    = Join-Path $PSScriptRoot 'data'
 $LogPath    = Join-Path $DataDir 'server.log'
 $ErrLogPath = Join-Path $DataDir 'server.err.log'
@@ -43,13 +43,13 @@ function Get-RunningProcess {
 function Stop-Service {
     $procs = Get-RunningProcess
     if ($procs.Count -eq 0) {
-        Write-Note '没有正在运行的 trae2api-web 进程'
+        Write-Note '没有正在运行的 traeapi 进程'
         return
     }
     $ids = ($procs | ForEach-Object { $_.Id }) -join ','
     $procs | Stop-Process -Force
     Start-Sleep -Milliseconds 600
-    Write-Ok "已停止 trae2api-web (PID: $ids)"
+    Write-Ok "已停止 traeapi (PID: $ids)"
 }
 
 # 读取 .env 中的密钥；缺失或为占位符时生成新的并写回文件
@@ -144,7 +144,7 @@ if (Test-PortListening $listenPort) {
 
 if (Test-NeedBuild) {
     if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-        Write-Fail '未检测到 go 命令，请先安装 Go 1.22+ 或直接放置已编译的 trae2api-web.exe'
+        Write-Fail '未检测到 go 命令，请先安装 Go 1.22+ 或直接放置已编译的 traeapi.exe'
         exit 1
     }
     Write-Step '检测到源码变更或缺少二进制，开始编译...'

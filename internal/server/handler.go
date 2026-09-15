@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"trae2api-web/internal/pool"
-	"trae2api-web/internal/upstream"
+	"traeapi/internal/pool"
+	"traeapi/internal/upstream"
 )
 
 // Config handler 依赖。

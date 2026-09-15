@@ -1,3 +1,3 @@
-module trae2api-web
+module traeapi
 
 go 1.22

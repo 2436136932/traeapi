@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"trae2api-web/internal/pool"
+	"traeapi/internal/pool"
 )
 
 //go:embed admin.html

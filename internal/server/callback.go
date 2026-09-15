@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"trae2api-web/internal/upstream"
+	"traeapi/internal/upstream"
 )
 
 // appVersion 与 login.sh 保持一致；如未来 upstream.IdeVersion 升级，这里同步即可。

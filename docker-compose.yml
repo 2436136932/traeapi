@@ -1,7 +1,7 @@
 services:
-  tw2api:
+  traeapi:
     build: .
-    container_name: trae2api-web
+    container_name: traeapi
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai

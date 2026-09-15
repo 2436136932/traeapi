@@ -5,7 +5,7 @@ WORKDIR /src
 COPY go.mod ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tw2api ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/traeapi ./cmd/server
 
 FROM alpine:3.20
 RUN apk add --no-cache wget ca-certificates tzdata \
@@ -14,8 +14,8 @@ RUN apk add --no-cache wget ca-certificates tzdata \
  && chown -R app:app /app
 USER app
 WORKDIR /app
-COPY --from=build /out/tw2api /app/tw2api
+COPY --from=build /out/traeapi /app/traeapi
 EXPOSE 7864
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s \
   CMD wget -qO- http://127.0.0.1:7864/healthz || exit 1
-ENTRYPOINT ["/app/tw2api", "-config", "/app/config.json"]
+ENTRYPOINT ["/app/traeapi", "-config", "/app/config.json"]

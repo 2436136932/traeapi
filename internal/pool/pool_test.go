@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 func TestPickHighestCredits(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"trae2api-web/internal/auth"
-	"trae2api-web/internal/upstream"
+	"traeapi/internal/auth"
+	"traeapi/internal/upstream"
 )
 
 // newRouteUpstream 构造按 URL path 分派固定响应的 fake 上游。

@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"trae2api-web/internal/auth"
+	"traeapi/internal/auth"
 )
 
 // accountSummary 列表/预览对外结构（脱敏）。
