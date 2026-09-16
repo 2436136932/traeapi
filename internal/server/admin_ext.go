@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"traeapi/internal/pool"
 	"traeapi/internal/upstream"
 )
 
@@ -109,6 +111,46 @@ func (h *Handler) adminUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"summary": h.stats.summary(),
 		"records": h.stats.recent(limit),
+	})
+}
+
+// adminPools GET /admin/api/pools：各账号的积分包明细（只读）。
+//
+// 用途：TRAE 额度由多个包组成、按包顺序扣费，所以「本次扣的是通用积分还是
+// Work 专属积分」只能通过各包 usage 的变化看出来。本接口把每个包摊开返回，
+// 前端对比两次快照即可显示「自上次刷新以来哪个包被扣了多少」。
+func (h *Handler) adminPools(w http.ResponseWriter, r *http.Request) {
+	type acctPools struct {
+		UID      string              `json:"uid"`
+		Nickname string              `json:"nickname"`
+		Pools    []upstream.PoolInfo `json:"pools"`
+		Error    string              `json:"error,omitempty"`
+	}
+	st := h.cfg.Pool.List()
+	out := make([]acctPools, len(st))
+	var wg sync.WaitGroup
+	for i, s := range st {
+		wg.Add(1)
+		go func(i int, s pool.Status) {
+			defer wg.Done()
+			a := h.cfg.Pool.AuthByUID(s.UID)
+			if a == nil {
+				out[i] = acctPools{UID: s.UID, Nickname: s.Nickname, Error: "no auth found"}
+				return
+			}
+			pools, err := h.cfg.Upstream.EntPools(a)
+			ap := acctPools{UID: s.UID, Nickname: s.Nickname, Pools: pools}
+			if err != nil {
+				ap.Error = err.Error()
+			}
+			out[i] = ap
+		}(i, s)
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"accounts": out,
+		"note": "TRAE 额度由多个包组成、按包顺序扣费：通用积分（免费 / 每月赠送 / 签到等）用完后，才会动用 Work 专属积分。" +
+			"对比两次刷新就能看出当前扣的是哪个包；ID 为纯数字的包（如 358204062466）按上游特征视为 Work 专属积分。",
 	})
 }
 

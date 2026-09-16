@@ -115,6 +115,8 @@ func NewHandler(cfg Config) *Handler {
 	// 经 withAdminAuth 校验 Bearer = TW2A_API_KEY（见 §4 安全设计）。
 	h.mux.HandleFunc("GET /admin", h.adminPage)
 	h.mux.HandleFunc("GET /admin/api/credits", h.adminCredits)
+	// 积分包明细：区分「通用积分」与「Work 专属积分」的消耗（只读）
+	h.mux.HandleFunc("GET /admin/api/pools", h.adminPools)
 	// 一键签到（写操作，需 Bearer）：全账号并发签到 + 积分刷新 + 冷却解冻
 	h.mux.HandleFunc("POST /admin/api/checkin", h.withAdminAuth(h.adminCheckin))
 	// 模型列表（含本地配置倍率）与调用记录：只读

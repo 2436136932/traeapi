@@ -561,6 +561,86 @@ func (c *Client) EntUsage(a *auth.Auth) (remain, limit, used int64, packs int, e
 	return remain, limit, used, packs, nil
 }
 
+// PoolInfo 单个权益包的额度明细。
+//
+// 用途：TRAE 的额度由多个包组成（免费 / 每月登录赠送 / 每日签到 / 老用户福利…），
+// 计费按包顺序扣除，因此"本次扣的是哪个池"只能通过各包的 usage 变化看出来。
+type PoolInfo struct {
+	ID     string  `json:"id"`
+	Group  string  `json:"group_name,omitempty"`
+	Desc   string  `json:"desc,omitempty"`
+	Limit  int64   `json:"limit"`
+	Used   float64 `json:"used"`
+	Remain float64 `json:"remain"`
+	// NumericID 表示 entitlement_id 为纯数字。实测 Work 专属积分包的 ID
+	// 是纯数字（如 358204062466），而通用包带语义前缀（free_utc… / monthly_bonus… /
+	// checkin…），故以此作为「Work 专属」的判定特征（启发式）。
+	NumericID bool `json:"numeric_id"`
+}
+
+// EntPools 返回账号各权益包的额度明细（按上游返回顺序）。
+func (c *Client) EntPools(a *auth.Auth) ([]PoolInfo, error) {
+	req, err := http.NewRequest(http.MethodPost, c.ugBase()+EpEntUsage, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return nil, err
+	}
+	UgHeaders(req, a)
+	data, err := c.doJSON(req)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		UserEntitlementPackList []struct {
+			EntitlementBaseInfo struct {
+				EntitlementID string `json:"entitlement_id"`
+				Quota         struct {
+					CreditsLimit int64 `json:"credits_limit"`
+				} `json:"quota"`
+			} `json:"entitlement_base_info"`
+			Usage struct {
+				CreditsAmount float64 `json:"credits_amount"`
+			} `json:"usage"`
+			GroupName   string `json:"group_name"`
+			DisplayDesc string `json:"display_desc"`
+		} `json:"user_entitlement_pack_list"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("ent pools parse: %w", err)
+	}
+	out := make([]PoolInfo, 0, len(resp.UserEntitlementPackList))
+	for _, p := range resp.UserEntitlementPackList {
+		l := p.EntitlementBaseInfo.Quota.CreditsLimit
+		if l <= 0 {
+			continue // 免费包额度为 0，不参与计费
+		}
+		id := p.EntitlementBaseInfo.EntitlementID
+		u := p.Usage.CreditsAmount
+		out = append(out, PoolInfo{
+			ID:        id,
+			Group:     p.GroupName,
+			Desc:      p.DisplayDesc,
+			Limit:     l,
+			Used:      u,
+			Remain:    float64(l) - u,
+			NumericID: isAllDigits(id),
+		})
+	}
+	return out, nil
+}
+
+// isAllDigits 判断字符串是否全为数字（且非空）。
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // GetUserInfo 查询账号信息（登录用）。
 func (c *Client) GetUserInfo(a *auth.Auth) (uid, nickname, enterpriseID string, err error) {
 	host := a.ApiHost

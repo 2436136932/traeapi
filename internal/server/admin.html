@@ -144,6 +144,15 @@
       <div id="checkinStatus" class="login-status" style="display:none"></div>
       <div id="checkinDetail" style="display:none"></div>
     </div>
+    <div class="login-bar">
+      <h2>积分池明细（通用 vs Work 专属）</h2>
+      <div class="imp-row">
+        <button class="btn" onclick="loadPools()">刷新积分池</button>
+        <span style="color:var(--dim);font-size:12px">TRAE 的额度按包顺序扣费：通用积分用完后才会动用 Work 专属积分。点两次「刷新积分池」，被扣的那个包会标注「较上次 -X」。</span>
+      </div>
+      <div id="poolsNote" class="login-status" style="display:none"></div>
+      <div id="poolsTable"></div>
+    </div>
     <div class="grid" id="grid"><div style="color:var(--dim)"><span class="spin"></span> 切换到「账号管理」tab 查看详情，或点刷新</div></div>
   </div>
 
@@ -227,7 +236,7 @@ function switchTab(name, el){
 }
 function refreshActive(){
   if(activeTab==='accounts') loadAccounts();
-  else if(activeTab==='credits') loadCredits();
+  else if(activeTab==='credits'){ loadCredits(); loadPools(); }
   else if(activeTab==='models'){ loadFunction(); loadModels(); }
   else if(activeTab==='usage') loadUsage();
 }
@@ -463,6 +472,54 @@ function renderCheckinDetail(list){
       + '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(a.nickname || a.uid) + '</span>'
       + '<span style="color:var(--dim)">' + esc(extra) + '</span>'
       + '</div>';
+  }).join('');
+}
+
+/* ─── 积分池明细（区分通用 / Work 专属） ─── */
+let poolsSnapshot = {};   // uid -> { poolId: used }，用于对比两次刷新
+async function loadPools(){
+  const st = document.getElementById('poolsNote');
+  try{
+    const r = await fetch('/admin/api/pools', {cache:'no-store'});
+    const d = await r.json();
+    st.style.display = '';
+    st.textContent = d.note || '';
+    renderPools(d.accounts || []);
+  }catch(e){
+    st.style.display = '';
+    st.textContent = '加载失败：' + e.message;
+  }
+}
+function renderPools(accts){
+  const box = document.getElementById('poolsTable');
+  if(!accts.length){ box.innerHTML = '<div style="color:var(--dim);font-size:12px">账号池为空</div>'; return; }
+  box.innerHTML = accts.map(a=>{
+    if(a.error){
+      return '<div style="margin-top:10px;font-size:12px;color:var(--bad)">' + esc(a.nickname || a.uid) + '：' + esc(a.error) + '</div>';
+    }
+    const prev = poolsSnapshot[a.uid] || {};
+    const rows = (a.pools || []).map(p=>{
+      let delta = '';
+      const before = prev[p.id];
+      if(typeof before === 'number'){
+        const diff = p.used - before;
+        if(diff > 0.0001){ delta = ' <span style="color:#e6a23c">较上次 -' + fmt(diff) + '</span>'; }
+      }
+      const tag = p.numeric_id ? badge('Work 专属', 'b-ok') : badge('通用', 'b-dim');
+      const name = esc(p.group_name || p.desc || p.id);
+      return '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;flex-wrap:wrap">'
+        + tag
+        + '<span style="min-width:120px">' + name + '</span>'
+        + '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(p.id) + '</span>'
+        + '<span>剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）</span>'
+        + delta
+        + '</div>';
+    }).join('');
+    const snap = {};
+    (a.pools || []).forEach(p=>{ snap[p.id] = p.used; });
+    poolsSnapshot[a.uid] = snap;
+    return '<div style="margin-top:12px"><div style="font-weight:600;font-size:13px">' + esc(a.nickname || a.uid) + '</div>'
+      + (rows || '<div style="color:var(--dim);font-size:12px">无可用积分包</div>') + '</div>';
   }).join('');
 }
 
