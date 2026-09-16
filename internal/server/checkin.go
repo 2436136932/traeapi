@@ -3,7 +3,7 @@
 // 行为对齐 cmd/signin 与 scheduler.RunCheckinNow，区别是按需由面板触发：
 //  1. token 临近过期（<2h）先 RefreshToken 并原子落盘，避免签到因 401 失败
 //  2. CheckinStatus 查询今日签到状态与可领积分
-//  3. 未签到且签到开关开启 → CheckinClaim 领取（限流错误退避后重试一次）
+//  3. 未签到且签到开关开启 → CheckinClaim 领取（风控/限流类错误退避后重试一次）
 //  4. 重新查积分，remain > 0 且处于冷却的账号自动解冻（Pool.ReenableIfCredits）
 //
 // 安全纪律：写操作，经 withAdminAuth（Bearer = TW2A_API_KEY）校验；
@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	// checkinRetryDelay 签到限流（9074）后的重试退避时长。
+	// checkinRetryDelay 签到被上游风控/限流拒绝（9074）后的重试退避时长。
 	checkinRetryDelay = 1500 * time.Millisecond
 	// checkinMaxParallel 同时进行的签到账号数上限。上游对签到有限流，
 	// 全量并发反而容易自伤，故做节流。
@@ -44,6 +44,8 @@ type checkinResult struct {
 	Remain  int64  `json:"remain"`                    // 签到后最新剩余积分
 	// Code 上游业务错误码（如 9074「当前参与用户太多」），仅失败时有值。
 	// 上游失败也是 HTTP 200，前端靠它区分限流等场景给出友好提示。
+	// 注：9074 实测由 x-device-id 形态触发（GUID 会被风控拒绝），
+	// 正常路径下不应出现，见 upstream.UgHeaders/ugDeviceID。
 	Code  int    `json:"code,omitempty"`
 	Error string `json:"error,omitempty"`
 }
@@ -130,7 +132,9 @@ func (h *Handler) checkinOne(s pool.Status) checkinResult {
 	case !enable:
 		res.Action = "no_checkin"
 	default:
-		// 3. 领取签到积分；限流（9074 当前登录用户太多）属瞬时错误，退避后重试一次。
+		// 3. 领取签到积分；9074（风控/限流）视为瞬时错误，退避后重试一次作兜底。
+		//    正常路径不该出现 9074——ug 请求头已由 upstream.UgHeaders 带上
+		//    16 位数字设备号（传 GUID 必被风控拒绝）。
 		cerr := h.cfg.Upstream.CheckinClaim(a)
 		var ce *upstream.CheckinError
 		if errors.As(cerr, &ce) && ce.Retryable() {

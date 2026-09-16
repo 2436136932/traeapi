@@ -445,7 +445,7 @@ function renderCheckinDetail(list){
     const cls = a.action === 'failed' ? 'b-bad' : (a.action === 'claimed' ? 'b-ok' : 'b-dim');
     let extra = '';
     if(a.error){
-      extra = (a.code === 9074 ? '上游签到高峰限流：' : '') + a.error;
+      extra = (a.code === 9074 ? '上游风控拒绝（9074）：' : '') + a.error;
     } else if(a.remain > 0){
       extra = '剩余 ' + fmt(a.remain);
     }

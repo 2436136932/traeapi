@@ -62,7 +62,8 @@ func main() {
 		ErrThreshold: cfg.Cooldown.ErrThresh,
 		ErrCooldown:  cfg.ErrCooldownDur,
 		DefaultModel: cfg.DefaultModel,
-		ModelRates:   cfg.ModelRates,
+		ModelRates:          cfg.ModelRates,
+		HideInvisibleModels: cfg.HideInvisibleModels,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

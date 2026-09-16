@@ -303,6 +303,58 @@ func TestAdminRefreshModelsNoAccount(t *testing.T) {
 	}
 }
 
+// TestAdminModelsHideInvisibleModels 开启 hide_invisible_models 后，
+// 「标记不可见但有正式展示名」的旧版模型（如 glm-5）也应被隐藏，使列表贴近 TRAE 客户端。
+func TestAdminModelsHideInvisibleModels(t *testing.T) {
+	resetModelsCache()
+	defer resetModelsCache()
+
+	detail := `{"config_info_list":[` +
+		`{"config_name":"glm-5.2","context_window_tokens":{"dev":200000},` +
+		`"display_config":{"display_name":"GLM-5.2"}},` +
+		`{"config_name":"glm-5","context_window_tokens":{"dev":200000},` +
+		`"display_config":{"display_name":"GLM-5"},"is_invisible_to_user":true}` +
+		`]}`
+	up := newRouteUpstream(map[string]string{upstream.EpModels: detail})
+
+	// 默认：不可见但有名字的模型保留（仍可调用）
+	h := NewHandler(Config{
+		Pool:     testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at", ExpiresAt: 9999999999}),
+		Upstream: up,
+	})
+	if n := modelCount(t, h); n != 2 {
+		t.Errorf("default: models=%d want 2 (invisible-with-name kept)", n)
+	}
+
+	// 开启开关：只剩客户端会展示的可见模型
+	resetModelsCache()
+	h2 := NewHandler(Config{
+		Pool:                testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at", ExpiresAt: 9999999999}),
+		Upstream:            up,
+		HideInvisibleModels: true,
+	})
+	if n := modelCount(t, h2); n != 1 {
+		t.Errorf("hide_invisible_models: models=%d want 1", n)
+	}
+}
+
+// modelCount 返回 /admin/api/models 的模型总数。
+func modelCount(t *testing.T, h *Handler) int {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/admin/api/models", nil))
+	if rec.Code != 200 {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("bad json: %v body=%s", err, rec.Body)
+	}
+	return resp.Total
+}
+
 // fetchUsage 读取 /admin/api/usage 返回的记录列表。
 func fetchUsage(t *testing.T, h *Handler) []usageRecord {
 	t.Helper()

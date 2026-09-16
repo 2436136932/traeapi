@@ -64,7 +64,7 @@ func nextFire(now time.Time, hours []int) time.Time {
 
 // Run 主循环，阻塞直到 ctx 取消。
 //
-// 除整点触发外，若签到未能全部成功（上游 9074「当前参与用户太多」在高峰很常见），
+// 除整点触发外，若签到未能全部成功（如上游 9074 风控拒绝/高峰限流），
 // 会按 cfg.CheckinRetry 的间隔自动重试，最多 maxCheckinRetries 次。
 func (s *Scheduler) Run(ctx context.Context) {
 	all := append(append([]int{}, s.cfg.RefreshHours...), s.cfg.CheckinHour)
@@ -142,8 +142,8 @@ func contains(hours []int, h int) bool {
 
 // RunCheckinNow 立即对所有账号执行签到 + 积分刷新 + 解冻。
 // 冷却中的账号也参与（签到就是为了解冻它们）；禁用的跳过。
-// 返回是否全部账号都已签到成功——false 表示有账号失败（如上游 9074 限流）
-// 或仍处于未签到状态，调用方可据此安排自动重试。
+// 返回是否全部账号都已签到成功——false 表示有账号失败（如上游 9074 风控拒绝、
+// 临时限流）或仍处于未签到状态，调用方可据此安排自动重试。
 func (s *Scheduler) RunCheckinNow() (allDone bool) {
 	allDone = true
 	for _, st := range s.cfg.Pool.List() {

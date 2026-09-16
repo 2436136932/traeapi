@@ -8,6 +8,8 @@
     "glm-5.2": 1.0,
     "glm-5.3": 1.5
   },
+
+  "hide_invisible_models": false,
   "cooldown": {
     "plan_credit": "12h",
     "soft_rate": "60s",

@@ -22,6 +22,11 @@ type Config struct {
 	// ModelRates 面板展示用的模型倍率（本地参考系数，上游并不提供该数据）。
 	// 未配置的模型按 1.0 展示；仅影响控制台显示，不影响转发逻辑。
 	ModelRates map[string]float64 `json:"model_rates"`
+	// HideInvisibleModels 为 true 时隐藏上游标记 is_invisible_to_user=true 的模型，
+	// 让面板与 /v1/models 的列表更贴近 TRAE 客户端展示的内容
+	// （客户端不展示 glm-5、glm-5-turbo、DeepSeek-V4-Pro 非正式版等旧版模型）。
+	// 默认 false：这些模型技术上仍可调用，保留以便继续使用。
+	HideInvisibleModels bool `json:"hide_invisible_models"`
 
 	Cooldown struct {
 		PlanCredit  string `json:"plan_credit"`   // "12h"
@@ -133,6 +138,11 @@ func applyEnv(c *Config) {
 	if v := os.Getenv("TW2A_CHECKIN_RETRY_MINUTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Schedule.CheckinRetryMinutes = n
+		}
+	}
+	if v := os.Getenv("TW2A_HIDE_INVISIBLE_MODELS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.HideInvisibleModels = b
 		}
 	}
 	if v := os.Getenv("TW2A_TIMEOUT_SECONDS"); v != "" {

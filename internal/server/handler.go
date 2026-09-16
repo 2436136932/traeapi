@@ -31,6 +31,8 @@ type Config struct {
 	DefaultModel string        // 默认 glm-5.2
 	// ModelRates 面板展示的模型倍率（本地参考系数，上游不提供该数据；未配置按 1.0）
 	ModelRates map[string]float64
+	// HideInvisibleModels 隐藏上游标记 is_invisible_to_user 的模型，使列表贴近客户端展示
+	HideInvisibleModels bool
 }
 
 // maxBodyBytes 请求体大小上限（8MB），超过返回 413。
@@ -325,10 +327,12 @@ func (h *Handler) modelListDetailed() (list []map[string]any, hiddenCustom, hidd
 			}
 			// 隐藏非面向用户的模型：
 			//   1) 上游标记不可见「且」没有正式展示名 —— 内部代号模型（实测 sagitta / aquila
-			//      的 display_name 只是占位符 "-"）。仅标记不可见但有正式名的（如旧版
-			//      glm-5 / DeepSeek-V4-Pro）仍保留，因为用户可能仍在用；
-			//   2) 名字符合内部功能模型模式（子 agent / 摘要）作为兜底。
-			if (mi.IsInvisible && mi.Name == "") || isInternalModel(mi.ID) {
+			//      的 display_name 只是占位符 "-"）；
+			//   2) 名字符合内部功能模型模式（子 agent / 摘要）作为兜底；
+			//   3) 开启 HideInvisibleModels 时，所有标记不可见的模型一并隐藏
+			//      （含 glm-5 / glm-5-turbo / DeepSeek-V4-Pro 等旧版），
+			//      使列表贴近 TRAE 客户端的展示内容。
+			if (mi.IsInvisible && (mi.Name == "" || h.cfg.HideInvisibleModels)) || isInternalModel(mi.ID) {
 				hiddenInternal++
 				continue
 			}

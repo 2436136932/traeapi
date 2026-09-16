@@ -24,6 +24,7 @@ docs/*
 # 构建产物
 *.tmp
 __pycache__/
+*.exe
 traeapi.exe
 traeapi.exe~
 # 改名前的旧二进制（trae2api-web → traeapi），保留忽略避免误提交

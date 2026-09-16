@@ -310,3 +310,68 @@ func TestCheckinStatusAndClaim(t *testing.T) {
 		t.Errorf("path=%s", path)
 	}
 }
+
+// TestCheckinClaimSendsNumericDeviceID 回归测试：claim 实际发出的 X-Device-Id
+// 必须是 16 位数字（32 位十六进制 GUID 会被风控固定判为 9074），
+// 确保修复作用在真正调用上游的那条路径上。
+func TestCheckinClaimSendsNumericDeviceID(t *testing.T) {
+	var gotDeviceID string
+	c := testClient(func(r *http.Request) (*http.Response, error) {
+		gotDeviceID = r.Header.Get("X-Device-Id")
+		return jsonResp(200, `{"code":0,"message":"success"}`), nil
+	})
+	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
+	if err := c.CheckinClaim(a); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotDeviceID) != 16 || strings.Trim(gotDeviceID, "0123456789") != "" {
+		t.Errorf("claim 发送的 X-Device-Id=%q want 16 位数字", gotDeviceID)
+	}
+}
+
+// TestUgDeviceIDIs16DigitNumeric 上游风控要求 ug 接口的 x-device-id 是 16 位数字
+// 「Aha 设备号」；登录流程落盘的是 32 位十六进制 GUID，直接使用会让签到被拒
+// （HTTP 200 + code 9074「当前参与用户太多，请稍后再试」，实测可稳定复现），
+// 换成 16 位数字后同一账号立即 code 0 成功。故必须派生 16 位数字设备号。
+func TestUgDeviceIDIs16DigitNumeric(t *testing.T) {
+	a := &auth.Auth{UID: "2666736248956905", DeviceID: "07583986225ddd987138de476e6ae588"}
+	got := ugDeviceID(a)
+	if len(got) != 16 || strings.Trim(got, "0123456789") != "" {
+		t.Fatalf("ugDeviceID=%q want 16 位数字", got)
+	}
+	// 稳定：同一账号反复调用结果一致（跨天、跨重启都用同一设备号）
+	if again := ugDeviceID(a); again != got {
+		t.Errorf("ugDeviceID 不稳定: %q vs %q", got, again)
+	}
+	// 唯一：不同账号设备号不同（规避「一台设备只能签一个账号」）
+	b := &auth.Auth{UID: "3880644536968592", DeviceID: "a6b5c587acc77d0eae4d762ae71c7540"}
+	if ugDeviceID(b) == got {
+		t.Errorf("不同账号派生出相同设备号 %q", got)
+	}
+}
+
+// TestUgDeviceIDKeepsNumericOverride auth 文件里显式配置 16 位数字 deviceId 时沿用，
+// 便于人工为某账号指定/更换设备号（风控换绑场景）。
+func TestUgDeviceIDKeepsNumericOverride(t *testing.T) {
+	a := &auth.Auth{UID: "2666736248956905", DeviceID: "1234567890123456"}
+	if got := ugDeviceID(a); got != "1234567890123456" {
+		t.Errorf("ugDeviceID=%q want 沿用显式配置值", got)
+	}
+}
+
+// TestUgHeadersSendsNumericDeviceID UgHeaders 必须始终带上 16 位数字的 x-device-id，
+// 否则签到会被上游风控拒绝（9074）。
+func TestUgHeadersSendsNumericDeviceID(t *testing.T) {
+	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
+	req, err := http.NewRequest(http.MethodPost, "https://ug.example"+EpCheckinClaim, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	UgHeaders(req, a)
+	if got := req.Header.Get("X-Device-Id"); len(got) != 16 || strings.Trim(got, "0123456789") != "" {
+		t.Errorf("X-Device-Id=%q want 16 位数字", got)
+	}
+	if got := req.Header.Get("X-User-Region"); got != "CN" {
+		t.Errorf("X-User-Region=%q", got)
+	}
+}
