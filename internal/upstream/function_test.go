@@ -65,3 +65,29 @@ func TestKnownFunctionsCoversTraeWorkValues(t *testing.T) {
 		}
 	}
 }
+
+// TestFunctionOptions 面板选项必须覆盖全部通道，且每个都带中文说明（供下拉展示）。
+func TestFunctionOptions(t *testing.T) {
+	opts := FunctionOptions()
+	if len(opts) != len(KnownFunctions()) {
+		t.Fatalf("options=%d want %d", len(opts), len(KnownFunctions()))
+	}
+	seen := map[string]bool{}
+	for _, o := range opts {
+		if o.Value == "" || !IsKnownFunction(o.Value) {
+			t.Errorf("非法选项 %+v", o)
+		}
+		if strings.TrimSpace(o.Desc) == "" {
+			t.Errorf("选项 %s 缺少中文说明", o.Value)
+		}
+		if seen[o.Value] {
+			t.Errorf("选项重复：%s", o.Value)
+		}
+		seen[o.Value] = true
+	}
+	for _, f := range KnownFunctions() {
+		if !seen[f] {
+			t.Errorf("选项缺少 %s", f)
+		}
+	}
+}

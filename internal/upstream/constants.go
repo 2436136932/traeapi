@@ -83,3 +83,27 @@ func KnownFunctions() []string {
 	copy(out, knownFunctions)
 	return out
 }
+
+// functionDescs 各 function 的中文说明（面板展示用；含义来自 TraeWork 客户端
+// ai_agent.dll 的枚举与其相邻字符串，如 solo-design / design-library-creator）。
+var functionDescs = map[string]string{
+	FunctionWorkLite:     "工作场景 · 轻量本地处理（默认，最稳）",
+	FunctionWorkRemote:   "工作场景 · 云端 agent 处理",
+	FunctionDesignLite:   "设计场景 · 轻量本地处理",
+	FunctionDesignRemote: "设计场景 · 云端 agent 处理",
+}
+
+// FunctionInfo 面板展示用的通道选项（取值 + 中文说明）。
+type FunctionInfo struct {
+	Value string `json:"value"`
+	Desc  string `json:"desc"`
+}
+
+// FunctionOptions 返回全部可切换通道及其中文说明（顺序同白名单）。
+func FunctionOptions() []FunctionInfo {
+	out := make([]FunctionInfo, 0, len(knownFunctions))
+	for _, f := range knownFunctions {
+		out = append(out, FunctionInfo{Value: f, Desc: functionDescs[f]})
+	}
+	return out
+}

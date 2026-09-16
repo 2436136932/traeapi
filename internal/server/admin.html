@@ -472,7 +472,11 @@ async function loadFunction(){
     const r = await fetch('/admin/api/function', {cache:'no-store'});
     const d = await r.json();
     document.getElementById('fnSelect').innerHTML = (d.options || [])
-      .map(o=>'<option value="'+esc(o)+'"'+(o===d.current?' selected':'')+'>'+esc(o)+'</option>').join('');
+      .map(o=>{
+        const v = (o && o.value !== undefined) ? o.value : o;   // 兼容纯字符串数组
+        const desc = (o && o.desc) ? '（' + o.desc + '）' : '';
+        return '<option value="'+esc(v)+'"'+(v===d.current?' selected':'')+'>'+esc(v)+desc+'</option>';
+      }).join('');
   }catch(e){
     const st = document.getElementById('fnStatus');
     st.style.display = '';

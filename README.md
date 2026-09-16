@@ -145,6 +145,15 @@ curl.exe -s -X POST http://127.0.0.1:7864/v1/chat/completions `
 | `TW2A_HIDE_INVISIBLE_MODELS` | `false` | 设为 `true` 时连同「上游标记不可见」的旧版模型一起隐藏，列表更贴近 TRAE 客户端展示 |
 | `TW2A_FUNCTION` | `solo_work_lite` | 对话通道（SOLO function）：`solo_work_lite` / `solo_work_remote` / `solo_design_lite` / `solo_design_remote`；面板「模型」页可热切换，重启后回到此配置 |
 
+四个对话通道的含义（取值实测自 TraeWork 客户端，四者走同一端点 `/api/agent/v3/llm_utils_chat`，返回的 SSE 结构完全一致）：
+
+| 通道 | 说明 |
+|---|---|
+| `solo_work_lite` | 工作场景 · 轻量本地处理（默认，最稳） |
+| `solo_work_remote` | 工作场景 · 云端 agent 处理 |
+| `solo_design_lite` | 设计场景 · 轻量本地处理 |
+| `solo_design_remote` | 设计场景 · 云端 agent 处理 |
+
 冷却类配置使用 Go duration 格式（`12h`、`60s`、`10m`）。另有只能写在 `config.json` 的 `model_rates`：人工兜底倍率，仅在对应模型没有上游倍率时才生效。
 
 ## 六、运维脚本

@@ -117,7 +117,7 @@ func (h *Handler) adminFunction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"current": upstream.ActiveFunction(),
 		"default": upstream.Function,
-		"options": upstream.KnownFunctions(),
+		"options": upstream.FunctionOptions(),
 		"config":  h.cfg.SoloFunction,
 		"note":    "切换只影响后续对话请求的 function 字段，立即生效；重启服务后回到 config.json 的 solo_function / 环境变量 TW2A_FUNCTION 配置值。",
 	})
