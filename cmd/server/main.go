@@ -52,6 +52,12 @@ func main() {
 		CheckinRetry: time.Duration(cfg.Schedule.CheckinRetryMinutes) * time.Minute,
 	})
 
+	// 应用 SOLO function 配置；未知取值保持默认并告警（避免上游 4001）。
+	if cfg.SoloFunction != "" && !upstream.SetFunction(cfg.SoloFunction) {
+		log.Printf("[warn] unknown solo_function %q, keep %s", cfg.SoloFunction, upstream.ActiveFunction())
+	}
+	log.Printf("solo function: %s", upstream.ActiveFunction())
+
 	h := server.NewHandler(server.Config{
 		Pool:         p,
 		Upstream:     up,
@@ -64,6 +70,7 @@ func main() {
 		DefaultModel: cfg.DefaultModel,
 		ModelRates:          cfg.ModelRates,
 		HideInvisibleModels: cfg.HideInvisibleModels,
+		SoloFunction:        cfg.SoloFunction,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

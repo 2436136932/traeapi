@@ -110,7 +110,7 @@ curl.exe -s -X POST http://127.0.0.1:7864/v1/chat/completions `
 |---|---|
 | 账号管理 | 查看账号状态 / 积分 / Token 有效期，启停开关、刷新 token、删除、查看脱敏凭证 |
 | 额度监控 | 各账号积分卡片，以及「一键签到」按钮 |
-| 模型 | 官方模型列表、上下文窗口、倍率与会员折扣，可强制重新拉取 |
+| 模型 | 对话通道（SOLO function）切换、官方模型列表、上下文窗口、倍率与会员折扣，可强制重新拉取 |
 | 调用记录 | 本进程启动以来的调用明细与汇总 |
 
 使用要点：
@@ -143,6 +143,7 @@ curl.exe -s -X POST http://127.0.0.1:7864/v1/chat/completions `
 | `TW2A_CHECKIN_HOUR` | `9` | 每日自动签到的小时（0-23） |
 | `TW2A_CHECKIN_RETRY_MINUTES` | `30` | 签到失败后的重试间隔（分钟，0 = 关闭重试） |
 | `TW2A_HIDE_INVISIBLE_MODELS` | `false` | 设为 `true` 时连同「上游标记不可见」的旧版模型一起隐藏，列表更贴近 TRAE 客户端展示 |
+| `TW2A_FUNCTION` | `solo_work_lite` | 对话通道（SOLO function）：`solo_work_lite` / `solo_work_remote` / `solo_design_lite` / `solo_design_remote`；面板「模型」页可热切换，重启后回到此配置 |
 
 冷却类配置使用 Go duration 格式（`12h`、`60s`、`10m`）。另有只能写在 `config.json` 的 `model_rates`：人工兜底倍率，仅在对应模型没有上游倍率时才生效。
 

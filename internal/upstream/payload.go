@@ -9,14 +9,14 @@ import (
 // PrepareBody 单 pass 改写；无法解析时原样返回。
 //
 //	OpenAI: {model, messages, stream, tools, tool_choice, ...}
-//	SOLO:   {messages, function:"solo_work_lite", stream:true,
+//	SOLO:   {messages, function:<ActiveFunction()>, stream:true,
 //	         config_name:<model>, model:<model>}
 //
 // 改写规则（SPEC §4.4）：
 //  1. messages: content 字符串 → [{"type":"text","text":...}]；已是数组 → 透传
 //  2. stream: 强制 true（非流式由服务端聚合）
 //  3. model → config_name + model
-//  4. function: 固定 "solo_work_lite"
+//  4. function: 取自 ActiveFunction()（默认 solo_work_lite，可配置切换）
 //  5. tools/tool_choice: 归一化（"none" 删 tools；auto/required 保留；function 提取 name）
 func PrepareBody(src []byte) []byte {
 	if len(src) == 0 {
@@ -27,7 +27,7 @@ func PrepareBody(src []byte) []byte {
 		return src
 	}
 	obj["stream"] = true
-	obj["function"] = Function
+	obj["function"] = ActiveFunction()
 
 	if msgs, ok := obj["messages"].([]any); ok {
 		for _, mi := range msgs {

@@ -33,6 +33,9 @@ type Config struct {
 	ModelRates map[string]float64
 	// HideInvisibleModels 隐藏上游标记 is_invisible_to_user 的模型，使列表贴近客户端展示
 	HideInvisibleModels bool
+	// SoloFunction 配置文件里的 SOLO function（仅供面板展示；
+	// 实际生效值以 upstream.ActiveFunction() 为准，面板可热切换）
+	SoloFunction string
 }
 
 // maxBodyBytes 请求体大小上限（8MB），超过返回 413。
@@ -119,6 +122,9 @@ func NewHandler(cfg Config) *Handler {
 	// 强制重新拉取上游模型表（写操作，需 Bearer）
 	h.mux.HandleFunc("POST /admin/api/models/refresh", h.withAdminAuth(h.adminRefreshModels))
 	h.mux.HandleFunc("GET /admin/api/usage", h.adminUsage)
+	// 对话通道（SOLO function）：读取只读；切换为写操作，需 Bearer
+	h.mux.HandleFunc("GET /admin/api/function", h.adminFunction)
+	h.mux.HandleFunc("POST /admin/api/function", h.withAdminAuth(h.adminSetFunction))
 	// 账号 CRUD
 	h.mux.HandleFunc("GET /admin/api/accounts", h.adminAccounts)
 	h.mux.HandleFunc("POST /admin/api/accounts/import", h.withAdminAuth(h.adminImportAccount))

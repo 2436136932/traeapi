@@ -4,7 +4,10 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"traeapi/internal/upstream"
 )
 
 // adminRefreshModels POST /admin/api/models/refresh：绕过缓存立即重新拉取上游模型表。
@@ -106,6 +109,38 @@ func (h *Handler) adminUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"summary": h.stats.summary(),
 		"records": h.stats.recent(limit),
+	})
+}
+
+// adminFunction GET /admin/api/function：当前 SOLO function 与可切换列表（只读）。
+func (h *Handler) adminFunction(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"current": upstream.ActiveFunction(),
+		"default": upstream.Function,
+		"options": upstream.KnownFunctions(),
+		"config":  h.cfg.SoloFunction,
+		"note":    "切换只影响后续对话请求的 function 字段，立即生效；重启服务后回到 config.json 的 solo_function / 环境变量 TW2A_FUNCTION 配置值。",
+	})
+}
+
+// adminSetFunction POST /admin/api/function：热切换 SOLO function（写操作，需 Bearer）。
+// body: {"function":"solo_work_remote"}; 传空串恢复默认。
+func (h *Handler) adminSetFunction(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Function string `json:"function"`
+	}
+	if err := decodeBodyOptional(r, &req); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	if !upstream.SetFunction(req.Function) {
+		writeOpenAIError(w, http.StatusBadRequest, "unknown_function",
+			"unknown function: "+req.Function+"（可选："+strings.Join(upstream.KnownFunctions(), ", ")+"）")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"current": upstream.ActiveFunction(),
 	})
 }
 

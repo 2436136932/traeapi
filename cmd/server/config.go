@@ -27,6 +27,11 @@ type Config struct {
 	// （客户端不展示 glm-5、glm-5-turbo、DeepSeek-V4-Pro 非正式版等旧版模型）。
 	// 默认 false：这些模型技术上仍可调用，保留以便继续使用。
 	HideInvisibleModels bool `json:"hide_invisible_models"`
+	// SoloFunction 上游 SOLO function，默认 solo_work_lite。
+	// 可选：solo_work_lite / solo_work_remote / solo_design_lite / solo_design_remote
+	// （实测自 TraeWork 客户端）。只影响对话请求的 function 字段；
+	// 面板可热切换，但重启后会回到这里配置的值。
+	SoloFunction string `json:"solo_function"`
 
 	Cooldown struct {
 		PlanCredit  string `json:"plan_credit"`   // "12h"
@@ -144,6 +149,9 @@ func applyEnv(c *Config) {
 		if b, err := strconv.ParseBool(v); err == nil {
 			c.HideInvisibleModels = b
 		}
+	}
+	if v := os.Getenv("TW2A_FUNCTION"); v != "" {
+		c.SoloFunction = v
 	}
 	if v := os.Getenv("TW2A_TIMEOUT_SECONDS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

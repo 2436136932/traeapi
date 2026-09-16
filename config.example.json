@@ -10,6 +10,8 @@
   },
 
   "hide_invisible_models": false,
+
+  "solo_function": "solo_work_lite",
   "cooldown": {
     "plan_credit": "12h",
     "soft_rate": "60s",

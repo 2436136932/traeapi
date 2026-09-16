@@ -150,6 +150,15 @@
   <!-- 模型 & 倍率 -->
   <div id="pane-models" class="pane">
     <div class="login-bar">
+      <h2>对话通道（SOLO function）</h2>
+      <div class="imp-row">
+        <select id="fnSelect" style="padding:6px 10px;border-radius:6px"></select>
+        <button class="btn primary" onclick="applyFunction()">应用</button>
+        <span style="color:var(--dim);font-size:12px">热切换，立即对后续对话生效，无需重启；重启后回到配置文件里的值。</span>
+      </div>
+      <div class="login-status" id="fnStatus" style="display:none"></div>
+    </div>
+    <div class="login-bar">
       <h2>模型 & 倍率</h2>
       <div class="imp-row">
         <button class="btn primary" id="modelsRefreshBtn" onclick="refreshModels()">重新拉取最新模型</button>
@@ -219,7 +228,7 @@ function switchTab(name, el){
 function refreshActive(){
   if(activeTab==='accounts') loadAccounts();
   else if(activeTab==='credits') loadCredits();
-  else if(activeTab==='models') loadModels();
+  else if(activeTab==='models'){ loadFunction(); loadModels(); }
   else if(activeTab==='usage') loadUsage();
 }
 
@@ -455,6 +464,40 @@ function renderCheckinDetail(list){
       + '<span style="color:var(--dim)">' + esc(extra) + '</span>'
       + '</div>';
   }).join('');
+}
+
+/* ─── 对话通道（SOLO function） ─── */
+async function loadFunction(){
+  try{
+    const r = await fetch('/admin/api/function', {cache:'no-store'});
+    const d = await r.json();
+    document.getElementById('fnSelect').innerHTML = (d.options || [])
+      .map(o=>'<option value="'+esc(o)+'"'+(o===d.current?' selected':'')+'>'+esc(o)+'</option>').join('');
+  }catch(e){
+    const st = document.getElementById('fnStatus');
+    st.style.display = '';
+    st.textContent = '读取当前通道失败：' + e.message;
+  }
+}
+async function applyFunction(){
+  const sel = document.getElementById('fnSelect');
+  const st = document.getElementById('fnStatus');
+  st.style.display = '';
+  st.className = 'login-status';
+  st.innerHTML = '<span class="spin"></span> 应用中...';
+  try{
+    const r = await fetch('/admin/api/function', {
+      method:'POST', headers:{'Content-Type':'application/json', ...authHeader()},
+      body: JSON.stringify({function: sel.value})
+    });
+    const d = await r.json();
+    if(!r.ok){ st.className = 'login-status err'; st.textContent = '切换失败：' + apiErr(d); return; }
+    st.className = 'login-status ok';
+    st.textContent = '已切换到 ' + d.current + '（后续对话立即生效）';
+  }catch(e){
+    st.className = 'login-status err';
+    st.textContent = '切换失败：' + e.message;
+  }
 }
 
 /* ─── 模型 & 倍率 ─── */
