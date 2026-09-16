@@ -22,7 +22,6 @@ fi
 
 cd "$(dirname "$0")"
 AUTH_DIR="./auths"
-CONTAINER="traeapi"
 CLIENT_ID="en1oxy7wnw8j9n"          # SOLO stable
 APP_VERSION="0.1.52"
 API_HOST="https://api.trae.com.cn"  # ExchangeToken / GetUserInfo host（auth.apiHost）
@@ -300,16 +299,14 @@ except Exception as e:
     print(f"查积分: {e}")
 PYEOF
 
-# ─── 重启容器加载新账号 ──────────────────────────
+# ─── 提示服务加载新账号 ──────────────────────────
 echo ""
-if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-    echo "重启 $CONTAINER 加载新账号..."
-    docker restart "$CONTAINER" >/dev/null
-    sleep 2
-    COUNT=$(curl -s http://127.0.0.1:7864/status -H "Authorization: Bearer ${TW2A_API_KEY:-}" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('accounts',[])))" 2>/dev/null || echo "?")
-    echo "服务已重启，当前账号数: $COUNT"
+COUNT=$(curl -s http://127.0.0.1:7864/status -H "Authorization: Bearer ${TW2A_API_KEY:-}" 2>/dev/null | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('accounts',[])))" 2>/dev/null || echo "")
+if [ -n "$COUNT" ]; then
+    echo "检测到本地服务正在运行，当前账号数: $COUNT"
+    echo "凭证已写入 $AUTH_DIR，重启服务后生效（PowerShell 执行 .\\start.ps1 -Restart）"
 else
-    echo "容器 $CONTAINER 未运行，auth 文件已保存，下次启动自动加载"
+    echo "未检测到本地服务（7864 无响应），auth 文件已保存，下次启动自动加载"
 fi
 
 echo ""

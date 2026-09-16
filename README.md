@@ -24,15 +24,7 @@
 
 脚本会自动完成：读取或生成 `.env` 中的密钥 → 按需编译 → 启动 → 健康检查，最后打印访问地址与密钥。后台模式日志在 `data/server.log` 与 `data/server.err.log`。
 
-### 方式 2：Docker Compose
-
-```bash
-mkdir -p auths data
-cp .env.example .env     # 编辑 .env，把 TW2A_API_KEY 改成你自己的密钥
-docker compose up -d --build
-```
-
-### 方式 3：本地直接运行
+### 方式 2：本地直接运行
 
 环境要求：Go 1.22+
 
@@ -50,7 +42,7 @@ go build -o traeapi.exe ./cmd/server
 .\traeapi.exe
 ```
 
-> 本地直接运行**不会读取 `.env`**，密钥必须用环境变量传入（`.env` 只供 `docker compose` 取值）。`config.json` 与 `auths/` 目录不存在也能正常启动，会使用内置默认配置。
+> 本地直接运行**不会读取 `.env`**，密钥必须用环境变量传入（`.env` 是给 `start.ps1` 读取的）。`config.json` 与 `auths/` 目录不存在也能正常启动，会使用内置默认配置。
 
 启动后访问 <http://127.0.0.1:7864>，会自动跳转到管理面板 `/admin`。
 
