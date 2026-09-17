@@ -5,6 +5,7 @@ package upstream
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -104,6 +105,10 @@ type Client struct {
 	UgHost    string // https://api.trae.cn
 	OAuthHost string // https://api.trae.com.cn
 	ClientID  string // en1oxy7wnw8j9n
+
+	// CheckinRetryDelay 签到被上游风控/限流拒绝（9074）后的退避时长；
+	// 0 表示用默认值（1.5s）。测试可注入更短的值以加速。
+	CheckinRetryDelay time.Duration
 }
 
 // New 生产默认值。配置连接池减少 TLS 握手。
@@ -487,15 +492,54 @@ func (e *CheckinError) Retryable() bool { return e.Code == codeCheckinBusy }
 
 // CheckinClaim 执行签到。
 //
-// 注意：上游失败时同样可能返回 HTTP 200（如 code=9074 限流），
-// 因此必须解析响应体的 code 字段，不能只看 HTTP 状态码，
-// 否则会把「当前登录用户太多」这类失败误判为签到成功。
+// 上游语义（实测）：
+//   - 失败同样是 HTTP 200 + body 里的 code（如 9074），所以必须解析 code；
+//   - 账号当天**已签到**时，claim 幂等返回 code 0（不再校验设备号）；
+//   - 当天**首次** claim 才走风控：`x-device-id` 取值决定成败 —— 实测
+//     传 uid 成功，传登录流程的 32 位 GUID / 派生值 / 随机 16 位数字都被 9074 拒。
+//
+// 因此按 checkinDevicePlan 的候选顺序重试：首选值（uid）试两次以覆盖瞬时挤兑，
+// 之后每个候选值各试一次；只有 9074 这类可重试错误才换值，其它错误立即返回。
+// 全部候选都失败时返回最后一个错误（调用方照实展示，不谎报成功）。
 func (c *Client) CheckinClaim(a *auth.Auth) error {
+	plan := checkinDevicePlan(a)
+	var lastErr error
+	for i, deviceID := range plan {
+		attempts := 1
+		if i == 0 {
+			attempts = 2 // 首选值多试一次：9074 也可能是瞬时挤兑
+		}
+		for k := 0; k < attempts; k++ {
+			err := c.checkinClaimWith(a, deviceID)
+			if err == nil {
+				return nil
+			}
+			lastErr = err
+			var ce *CheckinError
+			if !errors.As(err, &ce) || !ce.Retryable() {
+				return err // 非 9074：不是设备号问题，直接返回
+			}
+			if k < attempts-1 {
+				time.Sleep(c.checkinRetryDelay())
+			}
+		}
+		if i < len(plan)-1 {
+			time.Sleep(c.checkinRetryDelay())
+		}
+	}
+	return lastErr
+}
+
+// checkinClaimWith 用指定设备号发一次 claim。
+func (c *Client) checkinClaimWith(a *auth.Auth, deviceID string) error {
 	req, err := http.NewRequest(http.MethodPost, c.ugBase()+EpCheckinClaim, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return err
 	}
 	UgHeaders(req, a)
+	if deviceID != "" {
+		req.Header.Set("X-Device-Id", deviceID)
+	}
 	data, err := c.doJSON(req)
 	if err != nil {
 		return err
@@ -512,6 +556,14 @@ func (c *Client) CheckinClaim(a *auth.Auth) error {
 		return &CheckinError{Code: resp.Code, Message: resp.Message}
 	}
 	return nil
+}
+
+// checkinRetryDelay 返回签到重试退避时长（默认 1.5s，可由 CheckinRetryDelay 注入）。
+func (c *Client) checkinRetryDelay() time.Duration {
+	if c.CheckinRetryDelay > 0 {
+		return c.CheckinRetryDelay
+	}
+	return 1500 * time.Millisecond
 }
 
 // UserEntUsage 聚合积分（ide_user_ent_usage 的 credits_limit 求和）。

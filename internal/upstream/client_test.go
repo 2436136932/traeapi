@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"traeapi/internal/auth"
 )
@@ -54,6 +55,68 @@ func testClient(fn rtFunc) *Client {
 		UgHost:    "https://ug.example",
 		OAuthHost: "https://oauth.example",
 		ClientID:  ClientID,
+		// 测试注入极短退避，避免 9074 候选重试把用例拖慢
+		CheckinRetryDelay: time.Millisecond,
+	}
+}
+
+// TestCheckinClaimSendsUIDDeviceID 回归测试：claim 首选把 uid 作为 x-device-id
+// 发送（实测只有 uid 能通过当天首次签到的风控；32 位 GUID / 派生值 / 随机 16 位
+// 数字都会被 9074 拒绝）。
+func TestCheckinClaimSendsUIDDeviceID(t *testing.T) {
+	var gotDeviceID, gotPath string
+	c := testClient(func(r *http.Request) (*http.Response, error) {
+		gotDeviceID, gotPath = r.Header.Get("X-Device-Id"), r.URL.Path
+		return jsonResp(200, `{"code":0,"message":"success"}`), nil
+	})
+	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
+	if err := c.CheckinClaim(a); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != EpCheckinClaim {
+		t.Errorf("path=%s", gotPath)
+	}
+	if gotDeviceID != a.UID {
+		t.Errorf("X-Device-Id=%q want uid %q", gotDeviceID, a.UID)
+	}
+}
+
+// TestCheckinClaimFallsBackToStoredDeviceID 首选值被 9074 拒后，应换候选取值重试：
+// 第二个候选（账号登录时记录的设备号）返回成功即视为签到成功。
+func TestCheckinClaimFallsBackToStoredDeviceID(t *testing.T) {
+	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
+	var got []string
+	c := testClient(func(r *http.Request) (*http.Response, error) {
+		dev := r.Header.Get("X-Device-Id")
+		got = append(got, dev)
+		if dev == a.UID {
+			return jsonResp(200, `{"code":9074,"message":"当前参与用户太多，请稍后再试"}`), nil
+		}
+		return jsonResp(200, `{"code":0,"message":"success"}`), nil
+	})
+	if err := c.CheckinClaim(a); err != nil {
+		t.Fatalf("want success on fallback, got %v", err)
+	}
+	// 首选 uid 会试两次（覆盖瞬时挤兑），随后换到账号设备号成功
+	if len(got) != 3 {
+		t.Fatalf("claim calls=%d (%v) want 3", len(got), got)
+	}
+	if got[0] != a.UID || got[1] != a.UID || got[2] != a.DeviceID {
+		t.Errorf("device 候选顺序=%v want [uid uid stored]", got)
+	}
+}
+
+// TestCheckinDevicePlanOrder 候选顺序：人工指定的 16 位数字 > uid > 账号设备号 > 派生值。
+func TestCheckinDevicePlanOrder(t *testing.T) {
+	a := &auth.Auth{UID: "2666736248956905", DeviceID: "07583986225ddd987138de476e6ae588"}
+	plan := checkinDevicePlan(a)
+	if len(plan) != 3 || plan[0] != a.UID || plan[1] != a.DeviceID || !num16(plan[2]) {
+		t.Errorf("plan=%v", plan)
+	}
+	// 人工写成 16 位数字时优先采用（换绑场景）
+	b := &auth.Auth{UID: "2666736248956905", DeviceID: "1234567890123456"}
+	if got := ugDeviceID(b); got != "1234567890123456" {
+		t.Errorf("ugDeviceID=%q want 显式配置值", got)
 	}
 }
 
@@ -311,67 +374,47 @@ func TestCheckinStatusAndClaim(t *testing.T) {
 	}
 }
 
-// TestCheckinClaimSendsNumericDeviceID 回归测试：claim 实际发出的 X-Device-Id
-// 必须是 16 位数字（32 位十六进制 GUID 会被风控固定判为 9074），
-// 确保修复作用在真正调用上游的那条路径上。
-func TestCheckinClaimSendsNumericDeviceID(t *testing.T) {
-	var gotDeviceID string
-	c := testClient(func(r *http.Request) (*http.Response, error) {
-		gotDeviceID = r.Header.Get("X-Device-Id")
-		return jsonResp(200, `{"code":0,"message":"success"}`), nil
-	})
-	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
-	if err := c.CheckinClaim(a); err != nil {
-		t.Fatal(err)
-	}
-	if len(gotDeviceID) != 16 || strings.Trim(gotDeviceID, "0123456789") != "" {
-		t.Errorf("claim 发送的 X-Device-Id=%q want 16 位数字", gotDeviceID)
-	}
-}
-
-// TestUgDeviceIDIs16DigitNumeric 上游风控要求 ug 接口的 x-device-id 是 16 位数字
-// 「Aha 设备号」；登录流程落盘的是 32 位十六进制 GUID，直接使用会让签到被拒
-// （HTTP 200 + code 9074「当前参与用户太多，请稍后再试」，实测可稳定复现），
-// 换成 16 位数字后同一账号立即 code 0 成功。故必须派生 16 位数字设备号。
-func TestUgDeviceIDIs16DigitNumeric(t *testing.T) {
+// TestDerivedUGDeviceIDStableAndUnique 兜底派生值：稳定（同账号跨天跨重启一致）
+// 且各账号互异（规避「一台设备只能签一个账号」）。
+func TestDerivedUGDeviceIDStableAndUnique(t *testing.T) {
 	a := &auth.Auth{UID: "2666736248956905", DeviceID: "07583986225ddd987138de476e6ae588"}
-	got := ugDeviceID(a)
-	if len(got) != 16 || strings.Trim(got, "0123456789") != "" {
-		t.Fatalf("ugDeviceID=%q want 16 位数字", got)
+	got := derivedUGDeviceID(a)
+	if !num16(got) {
+		t.Fatalf("derivedUGDeviceID=%q want 16 位数字", got)
 	}
-	// 稳定：同一账号反复调用结果一致（跨天、跨重启都用同一设备号）
-	if again := ugDeviceID(a); again != got {
-		t.Errorf("ugDeviceID 不稳定: %q vs %q", got, again)
+	if again := derivedUGDeviceID(a); again != got {
+		t.Errorf("派生值不稳定: %q vs %q", got, again)
 	}
-	// 唯一：不同账号设备号不同（规避「一台设备只能签一个账号」）
 	b := &auth.Auth{UID: "3880644536968592", DeviceID: "a6b5c587acc77d0eae4d762ae71c7540"}
-	if ugDeviceID(b) == got {
+	if derivedUGDeviceID(b) == got {
 		t.Errorf("不同账号派生出相同设备号 %q", got)
 	}
-}
-
-// TestUgDeviceIDKeepsNumericOverride auth 文件里显式配置 16 位数字 deviceId 时沿用，
-// 便于人工为某账号指定/更换设备号（风控换绑场景）。
-func TestUgDeviceIDKeepsNumericOverride(t *testing.T) {
-	a := &auth.Auth{UID: "2666736248956905", DeviceID: "1234567890123456"}
-	if got := ugDeviceID(a); got != "1234567890123456" {
-		t.Errorf("ugDeviceID=%q want 沿用显式配置值", got)
+	// 首选值（ugDeviceID）应是 uid，而不是派生值
+	if ugDeviceID(a) != a.UID {
+		t.Errorf("ugDeviceID=%q want uid", ugDeviceID(a))
 	}
 }
 
-// TestUgHeadersSendsNumericDeviceID UgHeaders 必须始终带上 16 位数字的 x-device-id，
-// 否则签到会被上游风控拒绝（9074）。
-func TestUgHeadersSendsNumericDeviceID(t *testing.T) {
+// TestUgHeadersSendsDeviceID UgHeaders 必须始终带上 x-device-id（缺失会被上游
+// 判为参数错误 9004），且首选 uid（唯一实测能过签到风控的取值）。
+func TestUgHeadersSendsDeviceID(t *testing.T) {
 	a := &auth.Auth{UID: "2666736248956905", AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
 	req, err := http.NewRequest(http.MethodPost, "https://ug.example"+EpCheckinClaim, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	UgHeaders(req, a)
-	if got := req.Header.Get("X-Device-Id"); len(got) != 16 || strings.Trim(got, "0123456789") != "" {
-		t.Errorf("X-Device-Id=%q want 16 位数字", got)
+	if got := req.Header.Get("X-Device-Id"); got != a.UID {
+		t.Errorf("X-Device-Id=%q want uid %q", got, a.UID)
 	}
 	if got := req.Header.Get("X-User-Region"); got != "CN" {
 		t.Errorf("X-User-Region=%q", got)
+	}
+	// 无 uid（手建扁平 auth）时退化为 16 位数字派生值，而不是把 32 位 GUID 发出去
+	b := &auth.Auth{AccessToken: "at", DeviceID: "07583986225ddd987138de476e6ae588"}
+	req2, _ := http.NewRequest(http.MethodPost, "https://ug.example"+EpCheckinClaim, nil)
+	UgHeaders(req2, b)
+	if got := req2.Header.Get("X-Device-Id"); !num16(got) {
+		t.Errorf("X-Device-Id=%q want 16 位数字派生值", got)
 	}
 }

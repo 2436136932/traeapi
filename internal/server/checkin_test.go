@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"traeapi/internal/auth"
 	"traeapi/internal/upstream"
@@ -34,6 +35,8 @@ func newRouteUpstream(routes map[string]string) *upstream.Client {
 		UgHost:    "https://fake.example",
 		OAuthHost: "https://fake.example",
 		ClientID:  upstream.ClientID,
+		// 注入极短退避：9074 候选重试不应拖慢用例
+		CheckinRetryDelay: time.Millisecond,
 	}
 }
 
@@ -191,6 +194,8 @@ func TestAdminCheckinRetriesOnBusyCode(t *testing.T) {
 		UgHost:    "https://fake.example",
 		OAuthHost: "https://fake.example",
 		ClientID:  upstream.ClientID,
+		// 注入极短退避，保证「首次 9074 → 第二次成功」的断言语义不受影响
+		CheckinRetryDelay: time.Millisecond,
 	}
 	h := NewHandler(Config{Pool: testPoolWith(checkinAuth("u1")), Upstream: up, APIKey: "test-key"})
 

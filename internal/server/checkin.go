@@ -21,8 +21,6 @@ import (
 )
 
 const (
-	// checkinRetryDelay 签到被上游风控/限流拒绝（9074）后的重试退避时长。
-	checkinRetryDelay = 1500 * time.Millisecond
 	// checkinMaxParallel 同时进行的签到账号数上限。上游对签到有限流，
 	// 全量并发反而容易自伤，故做节流。
 	checkinMaxParallel = 4
@@ -43,9 +41,8 @@ type checkinResult struct {
 	Credits int64  `json:"checkin_credits,omitempty"` // 签到可领积分
 	Remain  int64  `json:"remain"`                    // 签到后最新剩余积分
 	// Code 上游业务错误码（如 9074「当前参与用户太多」），仅失败时有值。
-	// 上游失败也是 HTTP 200，前端靠它区分限流等场景给出友好提示。
-	// 注：9074 实测由 x-device-id 形态触发（GUID 会被风控拒绝），
-	// 正常路径下不应出现，见 upstream.UgHeaders/ugDeviceID。
+	// 上游失败也是 HTTP 200，前端靠它区分风控/限流等场景给出友好提示。
+	// 9074 与 x-device-id 取值相关，见 upstream.checkinDevicePlan。
 	Code  int    `json:"code,omitempty"`
 	Error string `json:"error,omitempty"`
 }
@@ -132,15 +129,9 @@ func (h *Handler) checkinOne(s pool.Status) checkinResult {
 	case !enable:
 		res.Action = "no_checkin"
 	default:
-		// 3. 领取签到积分；9074（风控/限流）视为瞬时错误，退避后重试一次作兜底。
-		//    正常路径不该出现 9074——ug 请求头已由 upstream.UgHeaders 带上
-		//    16 位数字设备号（传 GUID 必被风控拒绝）。
+		// 3. 领取签到积分。设备号候选与 9074 退避重试都在 CheckinClaim 内部完成
+		//    （首选 uid，其次账号设备号与派生值，见 upstream.checkinDevicePlan）。
 		cerr := h.cfg.Upstream.CheckinClaim(a)
-		var ce *upstream.CheckinError
-		if errors.As(cerr, &ce) && ce.Retryable() {
-			time.Sleep(checkinRetryDelay)
-			cerr = h.cfg.Upstream.CheckinClaim(a)
-		}
 		switch {
 		case cerr == nil:
 			res.Action = "claimed"

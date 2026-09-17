@@ -29,6 +29,9 @@ API_HOST="https://api.trae.com.cn"  # ExchangeToken / GetUserInfo host（auth.ap
 mkdir -p "$AUTH_DIR"
 
 # ─── 生成机器/设备 id（hex32）：登录 URL 与落盘共用这一对 ───
+# 用途：登录 + SOLO 对话（chat）请求头，保持 hex32 形态不变（已实测可用）。
+# 注意：签到（ug/checkin_credits）另有风控，不用这对 id——见文末「自动签到」处说明
+# （那里优先用 uid 作设备号；用 hex32 deviceId 会被判 9074）。
 MACHINE_ID="$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets;print(secrets.token_hex(16))')"
 DEVICE_ID="$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets;print(secrets.token_hex(16))')"
 
@@ -269,29 +272,48 @@ print(f"已保存（{os.environ['ACTION']}）: {os.environ['AUTH_FILE']}")
 PYEOF
 
 # ─── 自动签到 + 查积分 ─────────────────────────────
+# 设备号策略（与 internal/upstream 的 checkinDevicePlan 一致）：
+# 上游 claim 在账号**当天首次**签到时按请求头 x-device-id 做风控，实测：
+#   传 uid（16 位数字）→ 成功；传本脚本自生成的 hex32 deviceId、随机 16 位数字
+#   → 9074「当前参与用户太多」；不发该头 → 9004 参数错误。
+# 注意别被幂等骗了：账号当天已签到后 claim 会返回 code 0 且不再校验设备号。
+# 故这里按「uid → 落盘 deviceId」依次尝试。
 TOKEN="$TOKEN" ACCT_UID="$ACCT_UID" DEVICE_ID="$DEVICE_ID" python3 - <<'PYEOF'
 import json, os, urllib.request
 UG = "https://api.trae.cn"
-HDRS = {
+UID = os.environ["ACCT_UID"]
+BASE = {
     "Content-Type": "application/json",
     "Authorization": "Cloud-IDE-JWT " + os.environ["TOKEN"],
     "X-User-Region": "CN",
-    "X-Device-Id": os.environ["DEVICE_ID"],
 }
-def post(path, body=b"{}"):
-    req = urllib.request.Request(UG + path, method="POST", data=body, headers=HDRS)
+def post(path, device_id, body=b"{}"):
+    hdrs = dict(BASE)
+    if device_id:
+        hdrs["X-Device-Id"] = device_id
+    req = urllib.request.Request(UG + path, method="POST", data=body, headers=hdrs)
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode() or "{}")
 try:
-    st = post("/trae/api/v2/ug/checkin_credits/status")
+    st = post("/trae/api/v2/ug/checkin_credits/status", UID)
     print(f"签到状态: checked_in={st.get('checked_in')} credits={st.get('credits')} enable={st.get('enable')}")
     if not st.get("checked_in") and st.get("enable"):
-        r = post("/trae/api/v2/ug/checkin_credits/claim")
-        print(f"签到: {r.get('message', 'success')}")
+        cands = []
+        for d in (UID, os.environ.get("DEVICE_ID", "")):
+            if d and d not in cands:
+                cands.append(d)
+        for d in cands:
+            r = post("/trae/api/v2/ug/checkin_credits/claim", d)
+            if r.get("code", 0) == 0:
+                print("签到: 成功")
+                break
+            print(f"签到: 设备号 {d} 被拒 code={r.get('code')} {r.get('message', '')}")
+        else:
+            print("签到: 失败，可稍后在面板「一键签到」重试")
 except Exception as e:
     print(f"签到: {e}")
 try:
-    ent = post("/trae/api/v2/pay/ide_user_ent_usage")
+    ent = post("/trae/api/v2/pay/ide_user_ent_usage", UID)
     packs = ent.get("user_entitlement_pack_list") or []
     total = sum(p.get("entitlement_base_info", {}).get("quota", {}).get("credits_limit", 0) for p in packs)
     print(f"当前积分: {total}")
