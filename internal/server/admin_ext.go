@@ -95,7 +95,7 @@ func (h *Handler) adminModels(w http.ResponseWriter, r *http.Request) {
 		"hidden_custom":   hiddenCustom,
 		"hidden_internal": hiddenInternal,
 		"data":            out,
-		"note":            "仅列出面向用户的官方模型（已过滤你在 TRAE 客户端自行添加的自定义模型，以及 browser_use_subagent 这类内部功能模型）；倍率优先取上游真实值（rate_source=upstream），其次 config.json → model_rates（config），都没有时按 1.0 占位（default）",
+		"note":            "仅列出面向用户的官方模型（已过滤你在 TRAE 客户端自行添加的自定义模型，以及 browser_use_subagent 这类内部功能模型）；倍率优先取上游真实值（rate_source=upstream），其次 config.json → model_rates（config），都没有时按 1.0 占位（default）。注意：倍率只是上游展示系数，不是计费公式——实测实际扣费按输入/输出分别计价（输出比输入贵 5~6 倍）、模型之间与倍率不成正比，真实消耗以「积分池明细」/「额度监控」的前后差值为准",
 	})
 }
 

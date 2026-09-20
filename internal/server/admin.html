@@ -148,7 +148,7 @@
       <h2>积分池明细（通用 vs Work 专属）</h2>
       <div class="imp-row">
         <button class="btn" onclick="loadPools()">刷新积分池</button>
-        <span style="color:var(--dim);font-size:12px">TRAE 的额度按包顺序扣费：通用积分用完后才会动用 Work 专属积分。点两次「刷新积分池」，被扣的那个包会标注「较上次 -X」。</span>
+        <span style="color:var(--dim);font-size:12px">TRAE 的额度按包顺序扣费：通用积分用完后才会动用 Work 专属积分。点两次「刷新积分池」，被扣的那个包会标注「较上次 -X」。同类型积分包已合并为一行（如每日签到 ×5），点「明细」展开逐包数据。</span>
       </div>
       <div id="poolsNote" class="login-status" style="display:none"></div>
       <div id="poolsTable"></div>
@@ -171,7 +171,7 @@
       <h2>模型 & 倍率</h2>
       <div class="imp-row">
         <button class="btn primary" id="modelsRefreshBtn" onclick="refreshModels()">重新拉取最新模型</button>
-        <span style="color:var(--dim);font-size:12px">上游模型表默认缓存 1 小时，点此立即重新拉取（写操作，需上方 API Key）</span>
+        <span style="color:var(--dim);font-size:12px">上游模型表默认缓存 1 小时，点此立即重新拉取（写操作，需上方 API Key）；倍率仅为上游展示系数，实际扣费按输入/输出分别计价、与倍率不成正比</span>
       </div>
       <div class="login-status" id="modelsNote"></div>
     </div>
@@ -498,22 +498,67 @@ function renderPools(accts){
       return '<div style="margin-top:10px;font-size:12px;color:var(--bad)">' + esc(a.nickname || a.uid) + '：' + esc(a.error) + '</div>';
     }
     const prev = poolsSnapshot[a.uid] || {};
-    const rows = (a.pools || []).map(p=>{
-      let delta = '';
+    // 同类型包（同名）合并为一行，如「每日签到 ×5」；点「明细」展开逐包数据
+    const groups = [];
+    const gidx = {};
+    (a.pools || []).forEach(p=>{
+      const tag = p.numeric_id ? 'Work 专属' : '通用';
+      const name = p.group_name || p.desc || p.id;
+      const key = tag + '|' + name;
+      let gi = gidx[key];
+      if(gi === undefined){
+        gi = groups.length;
+        gidx[key] = gi;
+        groups.push({tag: tag, name: name, items: [], limit: 0, used: 0, remain: 0, delta: 0});
+      }
+      const g = groups[gi];
+      g.items.push(p);
+      g.limit += p.limit;
+      g.used += p.used;
+      g.remain += p.remain;
       const before = prev[p.id];
       if(typeof before === 'number'){
         const diff = p.used - before;
-        if(diff > 0.0001){ delta = ' <span style="color:#e6a23c">较上次 -' + fmt(diff) + '</span>'; }
+        if(diff > 0.0001){ g.delta += diff; }
       }
-      const tag = p.numeric_id ? badge('Work 专属', 'b-ok') : badge('通用', 'b-dim');
-      const name = esc(p.group_name || p.desc || p.id);
-      return '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;flex-wrap:wrap">'
+    });
+    const rows = groups.map((g, gi)=>{
+      const tag = g.tag === 'Work 专属' ? badge('Work 专属', 'b-ok') : badge('通用', 'b-dim');
+      const multi = g.items.length > 1;
+      const name = esc(g.name) + (multi ? ' <span style="color:var(--dim)">×' + g.items.length + '</span>' : '');
+      const delta = g.delta > 0.0001 ? ' <span style="color:#e6a23c">较上次 -' + fmt(g.delta) + '</span>' : '';
+      const detailId = 'pd_' + String(a.uid).replace(/\W/g, '') + '_' + gi;
+      let row = '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;flex-wrap:wrap">'
         + tag
-        + '<span style="min-width:120px">' + name + '</span>'
-        + '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(p.id) + '</span>'
-        + '<span>剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）</span>'
-        + delta
-        + '</div>';
+        + '<span style="min-width:120px">' + name + '</span>';
+      if(multi){
+        row += '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + delta
+          + ' <a href="javascript:void(0)" style="color:var(--accent,#5aa2ff);font-size:12px" onclick="togglePoolDetail(\'' + detailId + '\')">明细</a>';
+      }else{
+        const p = g.items[0];
+        row += '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(p.id) + '</span>'
+          + '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + delta;
+      }
+      row += '</div>';
+      if(multi){
+        row += '<div id="' + detailId + '" style="display:none;margin:2px 0 0 24px">'
+          + g.items.map(p=>{
+              let d = '';
+              const before = prev[p.id];
+              if(typeof before === 'number'){
+                const diff = p.used - before;
+                if(diff > 0.0001){ d = ' <span style="color:#e6a23c">较上次 -' + fmt(diff) + '</span>'; }
+              }
+              return '<div style="font-size:12px;color:var(--dim);margin-top:3px">'
+                + '<span style="font-family:Consolas,monospace">' + esc(p.id) + '</span>'
+                + (p.desc ? '（' + esc(p.desc) + '）' : '')
+                + '：剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）' + d
+                + '</div>';
+            }).join('') + '</div>';
+      }
+      return row;
     }).join('');
     const snap = {};
     (a.pools || []).forEach(p=>{ snap[p.id] = p.used; });
@@ -521,6 +566,10 @@ function renderPools(accts){
     return '<div style="margin-top:12px"><div style="font-weight:600;font-size:13px">' + esc(a.nickname || a.uid) + '</div>'
       + (rows || '<div style="color:var(--dim);font-size:12px">无可用积分包</div>') + '</div>';
   }).join('');
+}
+function togglePoolDetail(id){
+  const el = document.getElementById(id);
+  if(el){ el.style.display = (el.style.display === 'none') ? '' : 'none'; }
 }
 
 /* ─── 对话通道（SOLO function） ─── */
