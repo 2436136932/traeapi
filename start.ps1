@@ -103,16 +103,31 @@ function Get-RunningProcess {
 
 function Stop-Service {
     $procs = Get-RunningProcess
-    if ($procs.Count -eq 0) {
-        Write-Note '没有正在运行的 traeapi 进程'
-        if (Test-Path -LiteralPath $PidPath) { Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue }
-        return
+    if ($procs.Count -gt 0) {
+        $ids = ($procs | ForEach-Object { $_.Id }) -join ','
+        $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 800
+        Write-Ok "已停止 traeapi (PID: $ids)"
+    } else {
+        Write-Note '没有通过 PID 文件登记的 traeapi 进程'
     }
-    $ids = ($procs | ForEach-Object { $_.Id }) -join ','
-    $procs | Stop-Process -Force
-    Start-Sleep -Milliseconds 800
     if (Test-Path -LiteralPath $PidPath) { Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue }
-    Write-Ok "已停止 traeapi (PID: $ids)"
+
+    # 兜底：PID 文件可能缺失（进程被强杀 / 以脚本之外的方式启动），
+    # 此时按端口反查并清理，确保 -Stop 真的能把服务停干净。
+    $listenPort = Get-ListenPort
+    $owners = Get-PortOwnerPids $listenPort
+    if ($owners.Count -gt 0) {
+        foreach ($procId in $owners) {
+            if (Test-IsTraeapiProcess $procId) {
+                Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds 400
+                Write-Ok "已停止未登记的 traeapi 实例 (PID: $procId，占用端口 $listenPort)"
+            } else {
+                Write-Note "端口 $listenPort 被非 traeapi 进程占用 (PID: $procId)，未处理"
+            }
+        }
+    }
 }
 
 function Test-PortListening($p) {
@@ -122,6 +137,62 @@ function Test-PortListening($p) {
     } catch {
         return [bool](netstat -ano | Select-String ":$p\s" | Select-String 'LISTENING')
     }
+}
+
+# 返回占用指定端口的监听进程 PID 列表。
+# 用途：PID 文件可能缺失（进程被强杀、或以脚本之外的方式启动），
+# 此时只能靠端口反查，否则会陷入「端口被占却找不到进程」的死角。
+function Get-PortOwnerPids($p) {
+    $pids = @()
+    try {
+        $conns = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+        $pids = @($conns | ForEach-Object { $_.OwningProcess } | Where-Object { $_ -gt 0 } | Select-Object -Unique)
+    } catch {
+        # 回退到 netstat 解析（老系统 / 无 Get-NetTCPConnection）
+        $lines = netstat -ano | Select-String ":$p\s" | Select-String 'LISTENING'
+        foreach ($line in $lines) {
+            $parts = ("$line".Trim() -split '\s+')
+            $last = $parts[$parts.Length - 1]
+            if ($last -match '^\d+$') { $pids += [int]$last }
+        }
+        $pids = @($pids | Select-Object -Unique)
+    }
+    return $pids
+}
+
+# 判断某 PID 是否像 traeapi 服务（python + 命令行含 traeapi）。
+# 只清理确认属于本服务的进程，绝不误杀恰好占用同端口的其他程序。
+function Test-IsTraeapiProcess($procId) {
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
+    if (-not $proc) { return $false }
+    if ($proc.Name -notmatch '^python') { return $false }
+    return ("$($proc.CommandLine)" -match 'traeapi')
+}
+
+# 清理占用端口但未被 PID 文件追踪的孤儿 traeapi 实例。
+# 返回 $true 表示端口已可用。
+function Clear-OrphanOnPort($p) {
+    $owners = Get-PortOwnerPids $p
+    if ($owners.Count -eq 0) { return $true }
+
+    $killed = @()
+    $foreign = @()
+    foreach ($procId in $owners) {
+        if (Test-IsTraeapiProcess $procId) {
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            $killed += $procId
+        } else {
+            $foreign += $procId
+        }
+    }
+    if ($killed.Count -gt 0) {
+        Start-Sleep -Milliseconds 800
+        Write-Ok "已清理未登记的 traeapi 实例 (PID: $($killed -join ','))"
+    }
+    if ($foreign.Count -gt 0) {
+        Write-Note "端口 $p 被非 traeapi 进程占用 (PID: $($foreign -join ','))，未自动处理"
+    }
+    return -not (Test-PortListening $p)
 }
 
 # 确保运行期依赖可用；缺失则用 pip 安装
@@ -178,8 +249,13 @@ if ($Port -gt 0) { $env:TW2A_LISTEN = ":$Port" }
 $env:PYTHONIOENCODING = 'utf-8'
 
 if (Test-PortListening $listenPort) {
-    Write-Fail "端口 $listenPort 已被其他程序占用，请先释放该端口或使用 -Port 指定其他端口"
-    exit 1
+    # 端口被占：先尝试清理未登记的 traeapi 孤儿实例（PID 文件缺失时靠端口反查），
+    # 只有确认是别的程序占用才报错退出。
+    Write-Note "端口 $listenPort 已被占用，正在检查占用者..."
+    if (-not (Clear-OrphanOnPort $listenPort)) {
+        Write-Fail "端口 $listenPort 被其他程序占用且无法自动释放，请先释放该端口或使用 -Port 指定其他端口"
+        exit 1
+    }
 }
 
 if ($Foreground) {
@@ -200,6 +276,8 @@ $proc = Start-Process -FilePath $pythonExe -ArgumentList @('-m', $ModuleName) `
     -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput $LogPath -RedirectStandardError $ErrLogPath
 
+# 兜底登记 PID：服务自身也会写（以它自己的 PID 为准），这里先写一份，
+# 保证「服务在写出 PID 之前就崩溃」时 -Stop 仍有据可查。
 Set-Content -LiteralPath $PidPath -Value $proc.Id -Encoding ASCII
 
 $healthy = $false
@@ -225,6 +303,10 @@ if ($healthy) {
     Write-Host ''
     Write-Note '下一步: 打开管理面板完成 Web 登录导入账号（当前账号池可能为空）'
 } else {
+    # 启动失败：清掉刚登记的 PID，避免留下指向死进程的陈旧文件
+    if ($proc.HasExited -and (Test-Path -LiteralPath $PidPath)) {
+        Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+    }
     if ($proc.HasExited) {
         Write-Fail "启动失败，进程已退出（exit code: $($proc.ExitCode)）。日志尾部："
     } else {

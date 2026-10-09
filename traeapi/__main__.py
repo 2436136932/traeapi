@@ -23,7 +23,7 @@ import threading
 
 import uvicorn
 
-from . import auth, config as config_mod
+from . import auth, config as config_mod, pidfile
 from .pool import Pool
 from .scheduler import Scheduler, SchedulerConfig
 from .server.app import create_app
@@ -184,12 +184,17 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     log.info("traeapi listening on %s (api_key=%s)", cfg.listen, bool(cfg.api_key))
+    # 自注册 PID 文件：无论由谁拉起（start.ps1 / start.sh / 手动 / WMI），
+    # 状态都可被脚本追踪，避免「端口被占但脚本找不到进程」的死角。
+    pid_path = pidfile.pid_file_for(cfg.state_file)
+    pidfile.write_pid_file(pid_path)
     try:
         main_server.run()
     except OSError as exc:
         log.error("http: %s", exc)
         return 1
     finally:
+        pidfile.remove_pid_file(pid_path)
         scheduler.stop()
         if callback_server is not None:
             callback_server.should_exit = True

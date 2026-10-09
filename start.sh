@@ -54,19 +54,76 @@ running_pids() {
     if kill -0 "$pid" 2>/dev/null; then echo "$pid"; fi
 }
 
+# 反查占用指定端口的监听进程 PID（PID 文件缺失时的兜底）。
+port_owner_pids() {
+    local port="$1" pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
+    elif command -v ss >/dev/null 2>&1; then
+        pids="$(ss -lptnH "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)"
+    elif command -v netstat >/dev/null 2>&1; then
+        pids="$(netstat -lptn 2>/dev/null | awk -v p=":$port" '$4 ~ p {print $7}' | cut -d/ -f1 || true)"
+    fi
+    echo "$pids" | tr '\n' ' '
+}
+
+# 推断监听端口：-p 参数 > config.json 的 listen > 7864。
+# stop_service 在 -s 场景下需要它（那时还没有走到 LISTEN_PORT 的计算）。
+detect_listen_port() {
+    if [[ "${PORT:-0}" -gt 0 ]]; then echo "$PORT"; return; fi
+    local listen=""
+    if [[ -f "config.json" ]]; then
+        listen="$("${PY:-python3}" -c '
+import json, sys
+try:
+    with open("config.json", encoding="utf-8") as fh:
+        print(str(json.load(fh).get("listen") or ""))
+except Exception:
+    print("")
+' 2>/dev/null || true)"
+    fi
+    if [[ -n "$listen" ]]; then echo "${listen##*:}"; else echo 7864; fi
+}
+
+# 判断 PID 是否像 traeapi 服务（命令行含 traeapi）。只清理确认属于本服务的进程。
+is_traeapi_pid() {
+    local pid="$1"
+    [[ -n "$pid" ]] || return 1
+    if [[ -r "/proc/$pid/cmdline" ]]; then
+        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q traeapi && return 0
+        return 1
+    fi
+    # macOS / 其他平台：用 ps 取命令行
+    ps -p "$pid" -o command= 2>/dev/null | grep -q traeapi
+}
+
 stop_service() {
     local pids
     pids="$(running_pids || true)"
-    if [[ -z "$pids" ]]; then
-        note "没有正在运行的 traeapi 进程"
-        rm -f "$PID_PATH"
-        return 0
+    if [[ -n "$pids" ]]; then
+        kill $pids 2>/dev/null || true
+        sleep 1
+        for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
+        ok "已停止 traeapi (PID: $pids)"
+    else
+        note "没有通过 PID 文件登记的 traeapi 进程"
     fi
-    kill $pids 2>/dev/null || true
-    sleep 1
-    for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
     rm -f "$PID_PATH"
-    ok "已停止 traeapi (PID: $pids)"
+
+    # 兜底：PID 文件可能缺失（进程被强杀 / 以脚本之外的方式启动），
+    # 按端口反查并清理，确保 -s 真的能把服务停干净。
+    local port owners
+    port="${LISTEN_PORT:-}"
+    [[ -n "$port" ]] || port="$(detect_listen_port)"
+    owners="$(port_owner_pids "$port")"
+    for pid in $owners; do
+        if is_traeapi_pid "$pid"; then
+            kill -9 "$pid" 2>/dev/null || true
+            ok "已停止未登记的 traeapi 实例 (PID: $pid，占用端口 $port)"
+        else
+            note "端口 $port 被非 traeapi 进程占用 (PID: $pid)，未处理"
+        fi
+    done
 }
 
 if [[ "$STOP" == "1" ]]; then
@@ -142,6 +199,28 @@ PYEOF
 )"
 
 if [[ "$PORT" -gt 0 ]]; then export TW2A_LISTEN=":$PORT"; fi
+
+# 端口被占：先尝试清理未登记的 traeapi 孤儿实例（PID 文件缺失时靠端口反查），
+# 只有确认是别的程序占用才报错退出。
+OWNERS="$(port_owner_pids "$LISTEN_PORT")"
+if [[ -n "${OWNERS// /}" ]]; then
+    note "端口 $LISTEN_PORT 已被占用，正在检查占用者..."
+    BLOCKED=0
+    for pid in $OWNERS; do
+        if is_traeapi_pid "$pid"; then
+            kill -9 "$pid" 2>/dev/null || true
+            sleep 0.4
+            ok "已清理未登记的 traeapi 实例 (PID: $pid)"
+        else
+            fail "端口 $LISTEN_PORT 被非 traeapi 进程占用 (PID: $pid)"
+            BLOCKED=1
+        fi
+    done
+    if [[ "$BLOCKED" == "1" ]]; then
+        fail "请先释放该端口或使用 -p 指定其他端口"
+        exit 1
+    fi
+fi
 
 if [[ "$FOREGROUND" == "1" ]]; then
     ok "前台启动，按 Ctrl+C 停止"

@@ -104,7 +104,9 @@ python -m traeapi -config my.json
 |---|---|
 | `data/server.log` | 标准输出日志 |
 | `data/server.err.log` | 标准错误日志（服务日志主要在这里） |
-| `data/server.pid` | 进程 PID，供 `-Stop` / `-Restart` 使用 |
+| `data/server.pid` | 进程 PID，供 `-Stop` / `-Restart` 使用（由**服务自身**写入，无论以何种方式启动） |
+
+> **端口被占用？** `start.ps1` / `start.sh` 会先检查占用者：如果是**本项目的 traeapi 进程**（例如上次异常退出、或以 `python -m traeapi` 手动启动的实例），会**自动清理后继续启动**；只有确认是别的程序占用时才报错退出。同理 `-Stop` 在没有 PID 文件时也会按端口反查并停止 traeapi 实例，不会误杀其他程序。
 
 ## 导入账号
 
@@ -293,7 +295,7 @@ python cmd/credit.py -pretty <UID>
 python -m pytest tests/ -q
 ```
 
-268 个用例，全部基于 mock 上游（不消耗真实积分）：
+285 个用例，全部基于 mock 上游（不消耗真实积分）：
 
 | 测试文件 | 用例 | 覆盖内容 |
 |---|---|---|
@@ -303,6 +305,7 @@ python -m pytest tests/ -q
 | `test_auth_pool.py` | 39 | 凭证解析与原子落盘、账号池冷却状态机、state.json 兼容与并发安全 |
 | `test_api_key.py` | 27 | 面板在线密钥管理（改密钥立即生效、持久化、优先级回退、清除后免鉴权） |
 | `test_expiry.py` | 20 | 积分到期时间解析（含 `end_time` 回退）、到期汇总与预警窗口、过期积分统计 |
+| `test_pidfile.py` | 17 | PID 文件自注册、路径推导、不误删其他进程的 PID 文件 |
 
 ## 项目结构
 
@@ -315,6 +318,7 @@ traeapi/
 │   ├── pool.py                # 账号池：挑号 + 冷却状态机 + state.json
 │   ├── scheduler.py           # 定时签到与 token 预刷新
 │   ├── apikey.py              # 面板可自定义的密钥存储
+│   ├── pidfile.py             # 服务自注册 PID（脚本据此追踪/停止服务）
 │   ├── jsonutil.py            # JSON 编解码工具
 │   ├── upstream/              # SOLO 上游协议适配
 │   │   ├── constants.py       #   主机 / 端点 / function 白名单
