@@ -281,6 +281,11 @@ class PoolInfo:
     # 是纯数字（如 358204062466），而通用包带语义前缀（free_utc… / monthly_bonus… /
     # checkin…），故以此作为「Work 专属」的判定特征（启发式）。
     numeric_id: bool = False
+    # 到期时间（Unix 秒，0 表示上游未提供）。实测上游在
+    # entitlement_base_info.end_time 与包级 expire_time 各给一份，两者始终相等。
+    expire_at: int = 0
+    # 生效时间（Unix 秒，0 表示上游未提供）。
+    start_at: int = 0
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {
@@ -289,7 +294,10 @@ class PoolInfo:
             "used": self.used,
             "remain": self.remain,
             "numeric_id": self.numeric_id,
+            "expire_at": self.expire_at,
         }
+        if self.start_at:
+            out["start_at"] = self.start_at
         if self.group:
             out["group_name"] = self.group
         if self.desc:
@@ -709,6 +717,9 @@ class Client:
             pack_used = _as_float(usage.get("credits_amount"))
             group = pack.get("group_name")
             desc = pack.get("display_desc")
+            # 到期时间：包级 expire_time 优先，回退 entitlement_base_info.end_time
+            # （实测两者始终相等；上游未来若只给其一也能取到）。
+            expire_at = _as_int(pack.get("expire_time")) or _as_int(base.get("end_time"))
             out.append(
                 PoolInfo(
                     id=ent_id,
@@ -718,6 +729,8 @@ class Client:
                     used=pack_used,
                     remain=float(pack_limit) - pack_used,
                     numeric_id=is_all_digits(ent_id),
+                    expire_at=expire_at,
+                    start_at=_as_int(base.get("start_time")),
                 )
             )
         return out

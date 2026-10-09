@@ -16,6 +16,44 @@ from .state import ServerState
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
+# 积分即将过期的预警窗口（天）。剩余积分在此窗口内到期时，前端会高亮提醒。
+EXPIRING_SOON_DAYS = 7
+
+
+def _expiry_summary(pools: list) -> dict:
+    """汇总积分包的到期情况。
+
+    返回：
+      - expiring_soon_days：预警窗口（天）
+      - expiring_soon_credits：窗口内将过期的剩余积分合计
+      - expired_credits：已过期但仍有剩余的积分合计
+      - next_expire_at：最近一个到期时间（Unix 秒，0 = 无）
+    """
+    now = int(time.time())
+    window = EXPIRING_SOON_DAYS * 86400
+    soon_credits = 0.0
+    expired_credits = 0.0
+    next_expire = 0
+    for pool in pools:
+        expire_at = getattr(pool, "expire_at", 0) or 0
+        remain = getattr(pool, "remain", 0.0) or 0.0
+        if not expire_at:
+            continue
+        if expire_at <= now:
+            if remain > 0:
+                expired_credits += remain
+            continue
+        if remain > 0 and expire_at - now <= window:
+            soon_credits += remain
+        if next_expire == 0 or expire_at < next_expire:
+            next_expire = expire_at
+    return {
+        "expiring_soon_days": EXPIRING_SOON_DAYS,
+        "expiring_soon_credits": round(soon_credits, 2),
+        "expired_credits": round(expired_credits, 2),
+        "next_expire_at": next_expire,
+    }
+
 
 def admin_page() -> HTMLResponse:
     """返回内嵌 HTML 面板（深色简洁风，无外部依赖）。"""
@@ -49,11 +87,14 @@ def admin_credits(state: ServerState) -> JSONResponse:
         }
         error = ""
         try:
-            remain, limit, used, packs = state.upstream.ent_usage(auth)
-            item["remain"] = remain
-            item["limit"] = limit
-            item["used"] = used
-            item["packs"] = packs
+            # ent_pools 与 ent_usage 打同一个端点，这里取明细后自行聚合，
+            # 顺带拿到各包到期时间（避免为到期信息多发一次上游请求）。
+            pools = state.upstream.ent_pools(auth)
+            item["remain"] = int(sum(p.remain for p in pools))
+            item["limit"] = int(sum(p.limit for p in pools))
+            item["used"] = int(sum(p.used for p in pools))
+            item["packs"] = len(pools)
+            item.update(_expiry_summary(pools))
         except Exception as exc:  # noqa: BLE001
             error = f"ent_usage: {exc}"
         try:
@@ -89,6 +130,8 @@ POOLS_NOTE = (
     "TRAE 额度由多个包组成、按包顺序扣费：通用积分（免费 / 每月赠送 / 签到等）用完后，"
     "才会动用 Work 专属积分。对比两次刷新就能看出当前扣的是哪个包；"
     "ID 为纯数字的包（如 358204062466）按上游特征视为 Work 专属积分。"
+    "到期时间取自上游 expire_time（实测每个包各不相同：签到积分按天顺延约 31 天，"
+    "月度赠送到当月底）；同类型包合并成一行时显示其中最早的到期时间，点「明细」看逐包时间。"
 )
 
 
@@ -97,7 +140,8 @@ def admin_pools(state: ServerState) -> JSONResponse:
 
     用途：TRAE 额度由多个包组成、按包顺序扣费，所以「本次扣的是通用积分还是
     Work 专属积分」只能通过各包 usage 的变化看出来。本接口把每个包摊开返回，
-    前端对比两次快照即可显示「自上次刷新以来哪个包被扣了多少」。
+    前端对比两次快照即可显示「自上次刷新以来哪个包被扣了多少」，
+    并按 expire_at 显示各包的剩余到期时间。
     """
     statuses = state.pool.list()
     out: list[dict[str, Any]] = [{} for _ in statuses]
@@ -116,6 +160,8 @@ def admin_pools(state: ServerState) -> JSONResponse:
         try:
             pools = state.upstream.ent_pools(auth)
             item["pools"] = [p.to_dict() for p in pools]
+            # 到期汇总：窗口内将过期的积分、已过期未用完的积分、最近到期时间
+            item.update(_expiry_summary(pools))
         except Exception as exc:  # noqa: BLE001
             item["error"] = str(exc)
         out[idx] = item

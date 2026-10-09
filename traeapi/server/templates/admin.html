@@ -521,10 +521,24 @@ function renderCredits(d){
     const meta = a.error ? '' :
       '<div class="meta"><span>总量 <b>'+fmt(a.limit)+'</b></span><span>已用 <b>'+fmt(a.used)+'</b></span>'+
       (a.checkin_enable ? '<span>今日可领 <b>'+fmt(a.checkin_credits)+'</b></span>' : '')+'</div>';
+    // 到期信息：最近到期时间 + 即将过期/已过期的积分提醒
+    let expiry = '';
+    if(!a.error && a.next_expire_at){
+      expiry += '<div style="font-size:12px;color:var(--dim);margin-top:6px">最近到期：'
+        + esc(fmtExpire(a.next_expire_at)) + '（' + esc(fmtRemain(a.next_expire_at)) + '后）</div>';
+    }
+    if(!a.error && a.expiring_soon_credits > 0){
+      expiry += '<div style="font-size:12px;color:#e0a33e;margin-top:4px">⚠️ '
+        + (a.expiring_soon_days || 7) + ' 天内将过期 <b>' + fmt(a.expiring_soon_credits) + '</b> 积分</div>';
+    }
+    if(!a.error && a.expired_credits > 0){
+      expiry += '<div style="font-size:12px;color:var(--bad);margin-top:4px">⛔ 已过期 '
+        + fmt(a.expired_credits) + ' 积分</div>';
+    }
     return '<div class="card'+(a.error?' err':'')+'">'
       + '<div class="card-top"><div><div class="nick">'+esc(a.nickname||'(未命名)')+'</div>'
       + '<div class="uid">'+esc(a.uid)+'</div></div><div class="badges">'+badges+'</div></div>'
-      + remainLine + meta
+      + remainLine + meta + expiry
       + (a.error ? '<div class="errline">'+esc(a.error)+'</div>' : '')
       + '</div>';
   }).join('');
@@ -590,6 +604,44 @@ function renderCheckinDetail(list){
 
 /* ─── 积分池明细（区分通用 / Work 专属） ─── */
 let poolsSnapshot = {};   // uid -> { poolId: used }，用于对比两次刷新
+
+/* 到期时间格式化 */
+function fmtExpire(ts){
+  if(!ts) return '';
+  const d = new Date(ts * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+       + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+// 相对剩余时长：如「31 天」「5 小时」「已过期」
+function fmtRemain(ts){
+  if(!ts) return '';
+  const diff = ts * 1000 - Date.now();
+  if(diff <= 0) return '已过期';
+  const mins = Math.floor(diff / 60000);
+  if(mins < 60) return mins + ' 分钟';
+  const hours = Math.floor(mins / 60);
+  if(hours < 24) return hours + ' 小时';
+  const days = Math.floor(hours / 24);
+  if(days < 30) return days + ' 天';
+  const months = Math.floor(days / 30);
+  return months + ' 个月';
+}
+// 到期紧迫度 → 徽章样式：已过期=bad，7天内=warn，其余=dim
+function expireClass(ts){
+  if(!ts) return 'b-dim';
+  const diff = ts * 1000 - Date.now();
+  if(diff <= 0) return 'b-bad';
+  if(diff <= 7 * 86400000) return 'b-warn';
+  return 'b-dim';
+}
+// 到期徽章（时间 + 剩余时长），ts 为空返回空串
+function expireBadge(ts, prefix){
+  if(!ts) return '';
+  const label = (prefix || '') + fmtExpire(ts) + '（' + fmtRemain(ts) + '）';
+  return badge(label, expireClass(ts));
+}
+
 async function loadPools(){
   const st = document.getElementById('poolsNote');
   try{
@@ -622,13 +674,17 @@ function renderPools(accts){
       if(gi === undefined){
         gi = groups.length;
         gidx[key] = gi;
-        groups.push({tag: tag, name: name, items: [], limit: 0, used: 0, remain: 0, delta: 0});
+        groups.push({tag: tag, name: name, items: [], limit: 0, used: 0, remain: 0, delta: 0, minExpire: 0});
       }
       const g = groups[gi];
       g.items.push(p);
       g.limit += p.limit;
       g.used += p.used;
       g.remain += p.remain;
+      // 合并行显示最早的到期时间（最紧急的那个）
+      if(p.expire_at && (g.minExpire === 0 || p.expire_at < g.minExpire)){
+        g.minExpire = p.expire_at;
+      }
       const before = prev[p.id];
       if(typeof before === 'number'){
         const diff = p.used - before;
@@ -646,12 +702,14 @@ function renderPools(accts){
         + '<span style="min-width:120px">' + name + '</span>';
       if(multi){
         row += '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + expireBadge(g.minExpire, '最早到期 ')
           + delta
           + ' <a href="javascript:void(0)" style="color:var(--accent,#5aa2ff);font-size:12px" onclick="togglePoolDetail(\'' + detailId + '\')">明细</a>';
       }else{
         const p = g.items[0];
         row += '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(p.id) + '</span>'
           + '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + expireBadge(p.expire_at, '到期 ')
           + delta;
       }
       row += '</div>';
@@ -667,7 +725,9 @@ function renderPools(accts){
               return '<div style="font-size:12px;color:var(--dim);margin-top:3px">'
                 + '<span style="font-family:Consolas,monospace">' + esc(p.id) + '</span>'
                 + (p.desc ? '（' + esc(p.desc) + '）' : '')
-                + '：剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）' + d
+                + '：剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）'
+                + expireBadge(p.expire_at, ' 到期 ')
+                + d
                 + '</div>';
             }).join('') + '</div>';
       }
@@ -676,8 +736,25 @@ function renderPools(accts){
     const snap = {};
     (a.pools || []).forEach(p=>{ snap[p.id] = p.used; });
     poolsSnapshot[a.uid] = snap;
+
+    // 到期预警摘要
+    let warn = '';
+    const soonDays = a.expiring_soon_days || 7;
+    if(a.expiring_soon_credits > 0){
+      warn += '<div style="font-size:12px;color:#e0a33e;margin-top:6px">⚠️ 未来 '
+        + soonDays + ' 天内将过期 <b>' + fmt(a.expiring_soon_credits) + '</b> 积分，建议优先使用</div>';
+    }
+    if(a.expired_credits > 0){
+      warn += '<div style="font-size:12px;color:var(--bad);margin-top:6px">⛔ 已有 <b>'
+        + fmt(a.expired_credits) + '</b> 积分过期未用完</div>';
+    }
+    if(a.next_expire_at){
+      warn += '<div style="font-size:12px;color:var(--dim);margin-top:4px">最近到期：'
+        + esc(fmtExpire(a.next_expire_at)) + '（' + esc(fmtRemain(a.next_expire_at)) + '后）</div>';
+    }
+
     return '<div style="margin-top:12px"><div style="font-weight:600;font-size:13px">' + esc(a.nickname || a.uid) + '</div>'
-      + (rows || '<div style="color:var(--dim);font-size:12px">无可用积分包</div>') + '</div>';
+      + (rows || '<div style="color:var(--dim);font-size:12px">无可用积分包</div>') + warn + '</div>';
   }).join('');
 }
 function togglePoolDetail(id){
