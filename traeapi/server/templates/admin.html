@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>traeapi 控制台</title>
+<style>
+  :root { --bg:#0f1115; --card:#171a21; --card2:#1d212b; --fg:#e6e9ef; --dim:#8a93a6;
+          --ok:#3fb96b; --warn:#e0a33e; --bad:#e05d5d; --accent:#4d9fff; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--fg); font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif; min-height:100vh; }
+  .wrap { max-width:1100px; margin:0 auto; padding:28px 20px 60px; }
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  h1 { font-size:22px; font-weight:600; letter-spacing:.3px; }
+  h1 small { color:var(--dim); font-weight:400; font-size:13px; margin-left:8px; }
+  .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .btn { background:var(--card2); color:var(--fg); border:1px solid #2a2f3a; border-radius:8px;
+         padding:8px 16px; font-size:13px; cursor:pointer; transition:.15s; }
+  .btn:hover { border-color:var(--accent); color:var(--accent); }
+  .btn.primary { background:#1c3a5a; border-color:var(--accent); color:var(--accent); }
+  .btn.danger { border-color:#5a2a2a; }
+  .btn.danger:hover { color:var(--bad); border-color:var(--bad); }
+  .btn.sm { padding:4px 10px; font-size:12px; }
+  #ts { color:var(--dim); font-size:12px; }
+  /* tabs */
+  .tabs { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid #232836; }
+  .tab { padding:8px 16px; font-size:13px; cursor:pointer; color:var(--dim); border-bottom:2px solid transparent; }
+  .tab.active { color:var(--fg); border-bottom-color:var(--accent); }
+  .pane { display:none; }
+  .pane.active { display:block; }
+  /* key bar */
+  .keybar { display:flex; gap:8px; align-items:center; margin-bottom:14px; font-size:12px; color:var(--dim); flex-wrap:wrap; }
+  .keybar input { background:var(--card); border:1px solid #2a2f3a; border-radius:6px; color:var(--fg);
+                  padding:5px 10px; font-size:12px; width:200px; font-family:Consolas,monospace; }
+  .keybar .saved { color:var(--ok); font-size:11px; }
+  /* credits grid */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid #232836; border-radius:12px; padding:18px 18px 14px; }
+  .card.err { border-color:var(--bad); }
+  .card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .nick { font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .uid { color:var(--dim); font-size:11px; margin-top:2px; font-family:Consolas,monospace; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .badge { font-size:11px; padding:3px 9px; border-radius:99px; white-space:nowrap; }
+  .b-ok   { background:#173a26; color:var(--ok); }
+  .b-warn { background:#3a2d13; color:var(--warn); }
+  .b-bad  { background:#3a1717; color:var(--bad); }
+  .b-dim  { background:#22262f; color:var(--dim); }
+  .credits { margin:16px 0 14px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .remain { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .remain span { font-size:14px; color:var(--dim); font-weight:400; margin-left:4px; }
+  .meta { color:var(--dim); font-size:12px; display:flex; gap:14px; flex-wrap:wrap; }
+  .meta b { color:var(--fg); font-weight:600; }
+  .errline { margin-top:10px; color:var(--bad); font-size:12px; word-break:break-all; }
+  /* accounts table */
+  table.accts { width:100%; border-collapse:collapse; font-size:13px; }
+  table.accts th, table.accts td { text-align:left; padding:10px 12px; border-bottom:1px solid #232836; }
+  table.accts th { color:var(--dim); font-weight:500; font-size:12px; }
+  table.accts tr:hover td { background:var(--card2); }
+  table.accts .mono { font-family:Consolas,monospace; font-size:11px; color:var(--dim); }
+  .row-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .toggle { position:relative; display:inline-block; width:38px; height:20px; }
+  .toggle input { opacity:0; width:0; height:0; }
+  .toggle .slider { position:absolute; cursor:pointer; inset:0; background:#2a2f3a; border-radius:99px; transition:.15s; }
+  .toggle .slider:before { content:""; position:absolute; height:14px; width:14px; left:3px; top:3px; background:var(--dim); border-radius:50%; transition:.15s; }
+  .toggle input:checked + .slider { background:#1c3a5a; }
+  .toggle input:checked + .slider:before { transform:translateX(18px); background:var(--accent); }
+  /* login + import */
+  .login-bar { background:var(--card); border:1px solid #232836; border-radius:12px; padding:16px 18px; margin-bottom:18px; }
+  .login-bar h2 { font-size:14px; font-weight:600; margin-bottom:10px; }
+  .login-status { font-size:12px; color:var(--dim); margin-top:8px; word-break:break-all; }
+  .login-status.err { color:var(--bad); }
+  .login-status.ok { color:var(--ok); }
+  textarea.imp { width:100%; min-height:90px; background:var(--card); border:1px solid #2a2f3a;
+                 border-radius:8px; color:var(--fg); padding:10px 12px; font-size:12px;
+                 font-family:Consolas,monospace; resize:vertical; }
+  .imp-row { display:flex; gap:10px; align-items:flex-start; margin-top:8px; flex-wrap:wrap; }
+  /* modal */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
+  .modal-bg.show { display:flex; }
+  .modal { background:var(--card); border:1px solid #2a2f3a; border-radius:12px; padding:20px; max-width:560px; width:92%; max-height:80vh; overflow:auto; }
+  .modal h3 { font-size:15px; margin-bottom:12px; }
+  .modal pre { background:var(--bg); border:1px solid #232836; border-radius:8px; padding:12px; font-size:12px;
+              font-family:Consolas,monospace; overflow:auto; white-space:pre-wrap; word-break:break-all; color:var(--fg); }
+  .modal .close { margin-top:14px; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--card2); border-top-color:var(--accent);
+          border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>traeapi 控制台<small>凭证管理 · 额度监控</small></h1>
+    <div class="toolbar">
+      <span id="ts"></span>
+      <button class="btn" onclick="refreshActive()">刷新</button>
+    </div>
+  </header>
+
+  <div class="keybar">
+    <span>API Key（写操作需）：</span>
+    <input id="apikey" type="password" placeholder="TW2A_API_KEY（写操作必填，点「保存」记忆）" oninput="onKeyChange()">
+    <button class="btn sm" onclick="saveKey()">保存</button>
+    <button class="btn sm" onclick="openKeyModal()">修改服务端密钥</button>
+    <span id="keystatus" class="saved" style="display:none">已记忆</span>
+    <span id="keyserver" style="font-size:11px;color:var(--dim)"></span>
+    <span style="margin-left:auto;font-size:11px">列表/额度为只读；导入/删除/开关/登录需 Key</span>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('accounts',this)">账号管理</div>
+    <div class="tab" onclick="switchTab('credits',this)">额度监控</div>
+    <div class="tab" onclick="switchTab('models',this)">模型</div>
+    <div class="tab" onclick="switchTab('usage',this)">调用记录</div>
+  </div>
+
+  <!-- 账号管理 -->
+  <div id="pane-accounts" class="pane active">
+    <div class="login-bar">
+      <h2>添加账号（TRAE 登录）</h2>
+      <button class="btn primary" id="loginBtn" onclick="startLogin()">添加账号（TRAE 登录）</button>
+      <div id="loginStatus" class="login-status" style="display:none"></div>
+    </div>
+
+    <div class="login-bar">
+      <h2>导入凭证（粘贴回调链接或 JSON）</h2>
+      <textarea class="imp" id="impInput" placeholder="粘贴 http://127.0.0.1:18080/authorize?refreshToken=... 回调链接，或 {&quot;account&quot;:...,&quot;auth&quot;:...} / {&quot;accessToken&quot;:...,&quot;uid&quot;:...} JSON"></textarea>
+      <div class="imp-row">
+        <button class="btn" onclick="importCred()">导入</button>
+        <span id="impStatus" class="login-status" style="display:none"></span>
+      </div>
+    </div>
+
+    <div id="acctTable"><div style="color:var(--dim)"><span class="spin"></span> 加载中...</div></div>
+  </div>
+
+  <!-- 额度监控 -->
+  <div id="pane-credits" class="pane">
+    <div class="login-bar">
+      <h2>积分签到</h2>
+      <div class="imp-row">
+        <button class="btn primary" id="checkinBtn" onclick="runCheckin()">一键签到（全部账号）</button>
+        <span style="color:var(--dim);font-size:12px">对所有启用账号执行签到并刷新积分；冷却中的账号签到后自动解冻。写操作，需上方 API Key。</span>
+      </div>
+      <div id="checkinStatus" class="login-status" style="display:none"></div>
+      <div id="checkinDetail" style="display:none"></div>
+    </div>
+    <div class="login-bar">
+      <h2>积分池明细（通用 vs Work 专属）</h2>
+      <div class="imp-row">
+        <button class="btn" onclick="loadPools()">刷新积分池</button>
+        <span style="color:var(--dim);font-size:12px">TRAE 的额度按包顺序扣费：通用积分用完后才会动用 Work 专属积分。点两次「刷新积分池」，被扣的那个包会标注「较上次 -X」。同类型积分包已合并为一行（如每日签到 ×5），点「明细」展开逐包数据。</span>
+      </div>
+      <div id="poolsNote" class="login-status" style="display:none"></div>
+      <div id="poolsTable"></div>
+    </div>
+    <div class="grid" id="grid"><div style="color:var(--dim)"><span class="spin"></span> 切换到「账号管理」tab 查看详情，或点刷新</div></div>
+  </div>
+
+  <!-- 模型 & 倍率 -->
+  <div id="pane-models" class="pane">
+    <div class="login-bar">
+      <h2>对话通道（SOLO function）</h2>
+      <div class="imp-row">
+        <select id="fnSelect" style="padding:6px 10px;border-radius:6px"></select>
+        <button class="btn primary" onclick="applyFunction()">应用</button>
+        <span style="color:var(--dim);font-size:12px">热切换，立即对后续对话生效，无需重启；重启后回到配置文件里的值。</span>
+      </div>
+      <div class="login-status" id="fnStatus" style="display:none"></div>
+    </div>
+    <div class="login-bar">
+      <h2>模型 & 倍率</h2>
+      <div class="imp-row">
+        <button class="btn primary" id="modelsRefreshBtn" onclick="refreshModels()">重新拉取最新模型</button>
+        <span style="color:var(--dim);font-size:12px">上游模型表默认缓存 1 小时，点此立即重新拉取（写操作，需上方 API Key）；倍率仅为上游展示系数，实际扣费按输入/输出分别计价、与倍率不成正比</span>
+      </div>
+      <div class="login-status" id="modelsNote"></div>
+    </div>
+    <div id="modelTable"><div style="color:var(--dim)"><span class="spin"></span> 加载中...</div></div>
+  </div>
+
+  <!-- 调用记录 -->
+  <div id="pane-usage" class="pane">
+    <div class="login-bar">
+      <h2>使用统计</h2>
+      <div class="grid" id="usageSummary"></div>
+    </div>
+    <div id="usageTable"><div style="color:var(--dim)"><span class="spin"></span> 加载中...</div></div>
+  </div>
+</div>
+
+<!-- JSON 预览 modal -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3 id="modalTitle">凭证预览（脱敏）</h3>
+    <pre id="modalBody"></pre>
+    <button class="btn sm close" onclick="closeModal()">关闭</button>
+  </div>
+</div>
+
+<!-- 服务端密钥 modal -->
+<div class="modal-bg" id="keyModalBg" onclick="if(event.target===this)closeKeyModal()">
+  <div class="modal">
+    <h3>修改服务端密钥（API Key）</h3>
+    <div style="font-size:12px;color:var(--dim);line-height:1.7;margin-bottom:12px">
+      这里的密钥是<b>服务端</b>用于校验写操作的密钥（对应 TW2A_API_KEY）。<br>
+      修改后<b>立即生效、无需重启</b>，并保存到 <span id="keyFilePath" style="font-family:Consolas,monospace"></span>。<br>
+      修改成功后本页会自动记住新密钥，之后写操作无需再手填。
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:10px">
+      当前状态：<span id="keyCurrent"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="keyNew" type="password" placeholder="输入新密钥（至少 6 位，不能含空格）"
+             style="flex:1;min-width:220px;background:var(--card2);border:1px solid #2a2f3a;border-radius:6px;
+                    color:var(--fg);padding:7px 10px;font-size:12px;font-family:Consolas,monospace">
+      <button class="btn sm" onclick="genRandomKey()">随机生成</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn primary sm" id="keySaveBtn" onclick="submitNewKey()">保存新密钥</button>
+      <button class="btn sm danger" onclick="clearServerKey()">清除密钥（不再鉴权）</button>
+    </div>
+    <div id="keyModalStatus" class="login-status" style="display:none"></div>
+    <button class="btn sm close" onclick="closeKeyModal()">关闭</button>
+  </div>
+</div>
+
+<script>
+let activeTab = 'accounts';
+let loginPollTimer = null;
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function badge(text, cls){ return '<span class="badge '+cls+'">'+esc(text)+'</span>'; }
+function fmt(n){ return (n==null?'-':Number(n).toLocaleString()); }
+function authHeader(){
+  const k = getKey();
+  return k ? { 'Authorization': 'Bearer ' + k } : {};
+}
+function apiErr(d, fallback){
+  if(d && d.error && d.error.code === 'invalid_api_key'){
+    return '密钥无效或未填写：请在顶部「API Key」填入服务端密钥后点「保存」重试；'
+         + '忘了密钥可点「修改服务端密钥」查看状态，或删除 data/admin_key.json 后重启服务（回到 .env 里的 TW2A_API_KEY）';
+  }
+  return (d && (d.error?.message || d.message)) || fallback || '请求失败';
+}
+function getKey(){ return document.getElementById('apikey').value.trim(); }
+function onKeyChange(){ document.getElementById('keystatus').style.display='none'; }
+function saveKey(){
+  localStorage.setItem('tw2a_admin_key', getKey());
+  const s = document.getElementById('keystatus');
+  s.style.display=''; setTimeout(()=>s.style.display='none', 1500);
+}
+(function loadKey(){
+  const k = localStorage.getItem('tw2a_admin_key') || '';
+  if(k){ document.getElementById('apikey').value = k; }
+})();
+
+/* ─── 服务端密钥管理 ─── */
+function setClientKey(k){
+  document.getElementById('apikey').value = k || '';
+  localStorage.setItem('tw2a_admin_key', k || '');
+}
+async function loadServerKey(){
+  const el = document.getElementById('keyserver');
+  try{
+    const r = await fetch('/admin/api/key', {cache:'no-store'});
+    const d = await r.json();
+    if(!r.ok){ el.textContent=''; return; }
+    if(d.configured){
+      el.textContent = '服务端密钥：' + d.masked + '（' + d.source + '）';
+    } else {
+      el.textContent = '服务端未设密钥（写操作免 Key）';
+    }
+    document.getElementById('keyFilePath').textContent = d.key_file || '';
+    document.getElementById('keyCurrent').textContent = d.configured
+      ? (d.masked + '　来源：' + d.source + '　长度：' + d.length)
+      : '未设置（所有写操作无需 Key）';
+    // 服务端已设密钥、但本地还没记住 → 提示用户填写
+    if(d.configured && !getKey()){
+      el.textContent += '　← 请点「修改服务端密钥」或在上方填入该密钥';
+    }
+  }catch(e){ el.textContent=''; }
+}
+function openKeyModal(){
+  document.getElementById('keyModalStatus').style.display='none';
+  document.getElementById('keyNew').value='';
+  document.getElementById('keyModalBg').classList.add('show');
+  loadServerKey();
+}
+function closeKeyModal(){ document.getElementById('keyModalBg').classList.remove('show'); }
+function genRandomKey(){
+  const bytes = new Uint8Array(24);
+  (window.crypto || window.msCrypto).getRandomValues(bytes);
+  document.getElementById('keyNew').value =
+    Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function keyModalMsg(text, cls){
+  const st = document.getElementById('keyModalStatus');
+  st.style.display=''; st.className = 'login-status' + (cls ? ' ' + cls : '');
+  st.textContent = text;
+}
+async function submitNewKey(){
+  const val = document.getElementById('keyNew').value.trim();
+  if(!val){ keyModalMsg('请输入新密钥', 'err'); return; }
+  const btn = document.getElementById('keySaveBtn');
+  btn.disabled = true;
+  keyModalMsg('保存中...');
+  try{
+    const r = await fetch('/admin/api/key', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', ...authHeader()},
+      body: JSON.stringify({api_key: val})
+    });
+    const d = await r.json();
+    if(!r.ok){ keyModalMsg('保存失败：' + apiErr(d), 'err'); return; }
+    // 立即用新密钥替换本地记忆，后续写操作无需再手填
+    setClientKey(val);
+    keyModalMsg('已保存并生效：' + d.masked + '（本页已自动记住新密钥）', 'ok');
+    loadServerKey();
+  }catch(e){
+    keyModalMsg('保存失败：' + e.message, 'err');
+  }finally{
+    btn.disabled = false;
+  }
+}
+async function clearServerKey(){
+  if(!confirm('确认清除服务端密钥？清除后所有写操作都不再需要 Key（任何人访问本页都能改账号）。')) return;
+  keyModalMsg('清除中...');
+  try{
+    const r = await fetch('/admin/api/key', {method:'DELETE', headers: authHeader()});
+    const d = await r.json();
+    if(!r.ok){ keyModalMsg('清除失败：' + apiErr(d), 'err'); return; }
+    setClientKey('');
+    keyModalMsg('已清除：服务不再鉴权', 'ok');
+    loadServerKey();
+  }catch(e){
+    keyModalMsg('清除失败：' + e.message, 'err');
+  }
+}
+
+function switchTab(name, el){
+  activeTab = name;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pane-'+name).classList.add('active');
+  refreshActive();
+}
+function refreshActive(){
+  if(activeTab==='accounts') loadAccounts();
+  else if(activeTab==='credits'){ loadCredits(); loadPools(); }
+  else if(activeTab==='models'){ loadFunction(); loadModels(); }
+  else if(activeTab==='usage') loadUsage();
+}
+
+/* ─── 账号管理 ─── */
+async function loadAccounts(){
+  try{
+    const r = await fetch('/admin/api/accounts', {cache:'no-store'});
+    const d = await r.json();
+    renderAccounts(d.accounts||[]);
+    document.getElementById('ts').textContent = '更新于 ' + new Date().toLocaleTimeString();
+  }catch(e){
+    document.getElementById('acctTable').innerHTML = '<div style="color:var(--bad)">加载失败：'+esc(e.message)+'（服务是否在运行？）</div>';
+  }
+}
+function renderAccounts(accts){
+  const el = document.getElementById('acctTable');
+  if(!accts.length){
+    el.innerHTML = '<div style="color:var(--dim);padding:14px">暂无账号，点上方「添加账号」登录，或粘贴回调链接导入。</div>';
+    return;
+  }
+  let rows = accts.map(a=>{
+    let badges = '';
+    if(a.disabled) badges += badge('禁用(session dead)','b-bad');
+    else if(!a.enabled) badges += badge('已停用','b-warn');
+    else if(a.cooling) badges += badge('冷却','b-warn');
+    else badges += badge('正常','b-ok');
+    if(a.expired_soon) badges += badge('token将过期','b-warn');
+    const exp = a.expires_at ? new Date(a.expires_at*1000).toLocaleString() : '-';
+    const toggleChecked = a.enabled && !a.disabled ? 'checked' : '';
+    const toggleDisabled = a.disabled ? 'disabled' : '';
+    return '<tr>'
+      + '<td><div class="nick">'+esc(a.nickname||'(未命名)')+'</div>'
+      + '<div class="uid mono">'+esc(a.uid)+'</div></td>'
+      + '<td>'+badges+(a.reason?'<div class="mono" style="margin-top:4px">'+esc(a.reason)+'</div>':'')+'</td>'
+      + '<td class="mono">'+fmt(a.credits)+'</td>'
+      + '<td class="mono">'+esc(exp)+'</td>'
+      + '<td class="mono">'+esc(a.machine_id||'-')+' / '+esc(a.device_id||'-')+'</td>'
+      + '<td><div class="row-actions">'
+      + '<label class="toggle"><input type="checkbox" '+toggleChecked+' '+toggleDisabled+' onchange="toggleAcct(\''+esc(a.uid)+'\', this.checked)"><span class="slider"></span></label>'
+      + '<button class="btn sm" onclick="refreshAcct(\''+esc(a.uid)+'\')">刷新token</button>'
+      + '<button class="btn sm" onclick="showJSON(\''+esc(a.uid)+'\')">JSON</button>'
+      + '<button class="btn sm danger" onclick="deleteAcct(\''+esc(a.uid)+'\')">删除</button>'
+      + '</div></td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="accts"><thead><tr>'
+    + '<th>账号</th><th>状态</th><th>积分</th><th>Token 有效期</th><th>机器/设备(前8)</th><th style="text-align:right">操作</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+async function toggleAcct(uid, enabled){
+  const r = await fetch('/admin/api/accounts/'+encodeURIComponent(uid), {
+    method:'PATCH', headers:{'Content-Type':'application/json', ...authHeader()},
+    body: JSON.stringify({enabled: enabled})
+  });
+  if(!r.ok){ const e = await r.json().catch(()=>({})); alert('切换失败：'+apiErr(e)); loadAccounts(); return; }
+  loadAccounts();
+}
+async function refreshAcct(uid){
+  const r = await fetch('/admin/api/accounts/'+encodeURIComponent(uid)+'/refresh', {
+    method:'POST', headers: authHeader()
+  });
+  if(!r.ok){ const e = await r.json().catch(()=>({})); alert('刷新失败：'+apiErr(e)); }
+  loadAccounts();
+}
+async function deleteAcct(uid){
+  if(!confirm('确认删除账号 '+uid+'？将同时删除 auths 文件（不可逆）。')) return;
+  const r = await fetch('/admin/api/accounts/'+encodeURIComponent(uid), {
+    method:'DELETE', headers: authHeader()
+  });
+  if(!r.ok){ const e = await r.json().catch(()=>({})); alert('删除失败：'+apiErr(e)); }
+  loadAccounts();
+}
+async function showJSON(uid){
+  const r = await fetch('/admin/api/accounts/'+encodeURIComponent(uid)+'/json', {cache:'no-store'});
+  const d = await r.json();
+  document.getElementById('modalTitle').textContent = '凭证预览（脱敏）— '+(d.nickname||d.uid);
+  document.getElementById('modalBody').textContent = JSON.stringify(d, null, 2);
+  document.getElementById('modalBg').classList.add('show');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('show'); }
+
+/* ─── 导入 ─── */
+async function importCred(){
+  const v = document.getElementById('impInput').value.trim();
+  if(!v){ return; }
+  const st = document.getElementById('impStatus');
+  st.style.display=''; st.className='login-status'; st.textContent='导入中...';
+  let body, contentType;
+  if(v.startsWith('{')){
+    body = JSON.stringify({json: v}); contentType='application/json';
+  } else {
+    body = JSON.stringify({callback_url: v}); contentType='application/json';
+  }
+  try{
+    const r = await fetch('/admin/api/accounts/import', {
+      method:'POST', headers:{'Content-Type':contentType, ...authHeader()}, body
+    });
+    const d = await r.json();
+    if(!r.ok){ st.className='login-status err'; st.textContent='导入失败：'+apiErr(d); return; }
+    st.className='login-status ok';
+    st.textContent='导入成功：'+(d.uid||'?')+'（'+(d.action||'')+'）';
+    document.getElementById('impInput').value='';
+    loadAccounts();
+  }catch(e){ st.className='login-status err'; st.textContent='导入失败：'+e.message; }
+}
+
+/* ─── Web 登录闭环 ─── */
+async function startLogin(){
+  const st = document.getElementById('loginStatus');
+  st.style.display=''; st.className='login-status'; st.textContent='生成登录链接...';
+  const btn = document.getElementById('loginBtn'); btn.disabled = true;
+  try{
+    const r = await fetch('/admin/api/login', {method:'POST', headers:{'Content-Type':'application/json', ...authHeader()}, body:'{}'});
+    const d = await r.json();
+    if(!r.ok){ st.className='login-status err'; st.textContent='生成失败：'+apiErr(d); btn.disabled=false; return; }
+    st.textContent = '已打开登录窗口，请在浏览器完成手机号登录。完成后此页自动刷新。';
+    window.open(d.login_url, '_blank');
+    pollLogin(d.pending_id);
+  }catch(e){ st.className='login-status err'; st.textContent='生成失败：'+e.message; btn.disabled=false; }
+}
+function pollLogin(pid){
+  if(loginPollTimer) clearInterval(loginPollTimer);
+  const st = document.getElementById('loginStatus');
+  let waited = 0;
+  loginPollTimer = setInterval(async ()=>{
+    waited += 2;
+    if(waited > 180){ clearInterval(loginPollTimer); st.className='login-status err'; st.textContent='登录超时（3分钟），请重试'; document.getElementById('loginBtn').disabled=false; return; }
+    try{
+      const r = await fetch('/admin/api/login/result?pending_id='+encodeURIComponent(pid), {cache:'no-store'});
+      const d = await r.json();
+      if(d.state==='success'){
+        clearInterval(loginPollTimer);
+        st.className='login-status ok';
+        st.textContent='登录成功：'+(d.nickname||'')+'（'+(d.uid||'')+'）';
+        document.getElementById('loginBtn').disabled=false;
+        loadAccounts();
+      } else if(d.state==='failed'){
+        clearInterval(loginPollTimer);
+        st.className='login-status err';
+        st.textContent='登录失败：'+(d.error||'未知');
+        document.getElementById('loginBtn').disabled=false;
+      } else {
+        st.textContent = '等待登录回调...（'+waited+'s）';
+      }
+    }catch(e){ /* 瞬时错误继续轮询 */ }
+  }, 2000);
+}
+
+/* ─── 额度监控（原卡片视图，保留） ─── */
+function renderCredits(d){
+  const grid = document.getElementById('grid');
+  if(!d.accounts || d.accounts.length===0){
+    grid.innerHTML = '<div style="color:var(--dim)">暂无账号</div>';
+    return;
+  }
+  grid.innerHTML = d.accounts.map(a=>{
+    let badges = '';
+    if(a.error) badges += badge('查询失败','b-bad');
+    else {
+      if(a.checked_in) badges += badge('已签到','b-ok');
+      else badges += a.checkin_enable ? badge('未签到','b-warn') : badge('签到禁用','b-dim');
+      if(a.cooling) badges += badge('冷却中','b-warn');
+      if(a.disabled) badges += badge('已禁用','b-bad');
+      if(a.packs>0) badges += badge(a.packs+' 权益包','b-dim');
+    }
+    const remainLine = a.error ? '<div style="color:var(--bad);font-size:14px">额度查询失败</div>'
+      : '<div class="remain">'+fmt(a.remain)+'<span>积分剩余</span></div>';
+    const meta = a.error ? '' :
+      '<div class="meta"><span>总量 <b>'+fmt(a.limit)+'</b></span><span>已用 <b>'+fmt(a.used)+'</b></span>'+
+      (a.checkin_enable ? '<span>今日可领 <b>'+fmt(a.checkin_credits)+'</b></span>' : '')+'</div>';
+    return '<div class="card'+(a.error?' err':'')+'">'
+      + '<div class="card-top"><div><div class="nick">'+esc(a.nickname||'(未命名)')+'</div>'
+      + '<div class="uid">'+esc(a.uid)+'</div></div><div class="badges">'+badges+'</div></div>'
+      + remainLine + meta
+      + (a.error ? '<div class="errline">'+esc(a.error)+'</div>' : '')
+      + '</div>';
+  }).join('');
+}
+async function loadCredits(){
+  try{
+    const r = await fetch('/admin/api/credits', {cache:'no-store'});
+    renderCredits(await r.json());
+  }catch(e){
+    document.getElementById('grid').innerHTML = '<div style="color:var(--bad)">加载失败：'+esc(e.message)+'</div>';
+  }
+}
+
+/* ─── 一键签到 ─── */
+const CHECKIN_LABEL = { claimed:'签到成功', already:'今日已签', no_checkin:'签到关闭', disabled:'已禁用', no_auth:'无凭证', failed:'失败' };
+async function runCheckin(){
+  const st = document.getElementById('checkinStatus');
+  const box = document.getElementById('checkinDetail');
+  const btn = document.getElementById('checkinBtn');
+  st.style.display = '';
+  st.className = 'login-status';
+  st.innerHTML = '<span class="spin"></span> 正在签到（每个账号需多次请求上游，账号多时请稍候）...';
+  box.style.display = 'none';
+  btn.disabled = true;
+  try{
+    const r = await fetch('/admin/api/checkin', {
+      method:'POST', headers:{'Content-Type':'application/json', ...authHeader()}, body:'{}'
+    });
+    const d = await r.json();
+    if(!r.ok){ st.className = 'login-status err'; st.textContent = '签到失败：' + apiErr(d); return; }
+    st.className = 'login-status ok';
+    st.textContent = '完成（' + d.checked_at + '）：共 ' + d.total + ' 个账号 — 新签到 ' + d.claimed
+      + '，已签到 ' + d.already + '，失败 ' + d.failed + '，跳过 ' + d.skipped;
+    box.innerHTML = renderCheckinDetail(d.accounts || []);
+    box.style.display = '';
+    loadCredits();
+  }catch(e){
+    st.className = 'login-status err';
+    st.textContent = '签到失败：' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+function renderCheckinDetail(list){
+  if(!list.length){
+    return '<div style="color:var(--dim);font-size:12px;margin-top:8px">账号池为空，请先在「账号管理」添加账号</div>';
+  }
+  return list.map(a=>{
+    const cls = a.action === 'failed' ? 'b-bad' : (a.action === 'claimed' ? 'b-ok' : 'b-dim');
+    let extra = '';
+    if(a.error){
+      extra = (a.code === 9074 ? '上游风控拒绝（9074）：' : '') + a.error;
+    } else if(a.remain > 0){
+      extra = '剩余 ' + fmt(a.remain);
+    }
+    return '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;flex-wrap:wrap">'
+      + badge(CHECKIN_LABEL[a.action] || a.action, cls)
+      + '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(a.nickname || a.uid) + '</span>'
+      + '<span style="color:var(--dim)">' + esc(extra) + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+/* ─── 积分池明细（区分通用 / Work 专属） ─── */
+let poolsSnapshot = {};   // uid -> { poolId: used }，用于对比两次刷新
+async function loadPools(){
+  const st = document.getElementById('poolsNote');
+  try{
+    const r = await fetch('/admin/api/pools', {cache:'no-store'});
+    const d = await r.json();
+    st.style.display = '';
+    st.textContent = d.note || '';
+    renderPools(d.accounts || []);
+  }catch(e){
+    st.style.display = '';
+    st.textContent = '加载失败：' + e.message;
+  }
+}
+function renderPools(accts){
+  const box = document.getElementById('poolsTable');
+  if(!accts.length){ box.innerHTML = '<div style="color:var(--dim);font-size:12px">账号池为空</div>'; return; }
+  box.innerHTML = accts.map(a=>{
+    if(a.error){
+      return '<div style="margin-top:10px;font-size:12px;color:var(--bad)">' + esc(a.nickname || a.uid) + '：' + esc(a.error) + '</div>';
+    }
+    const prev = poolsSnapshot[a.uid] || {};
+    // 同类型包（同名）合并为一行，如「每日签到 ×5」；点「明细」展开逐包数据
+    const groups = [];
+    const gidx = {};
+    (a.pools || []).forEach(p=>{
+      const tag = p.numeric_id ? 'Work 专属' : '通用';
+      const name = p.group_name || p.desc || p.id;
+      const key = tag + '|' + name;
+      let gi = gidx[key];
+      if(gi === undefined){
+        gi = groups.length;
+        gidx[key] = gi;
+        groups.push({tag: tag, name: name, items: [], limit: 0, used: 0, remain: 0, delta: 0});
+      }
+      const g = groups[gi];
+      g.items.push(p);
+      g.limit += p.limit;
+      g.used += p.used;
+      g.remain += p.remain;
+      const before = prev[p.id];
+      if(typeof before === 'number'){
+        const diff = p.used - before;
+        if(diff > 0.0001){ g.delta += diff; }
+      }
+    });
+    const rows = groups.map((g, gi)=>{
+      const tag = g.tag === 'Work 专属' ? badge('Work 专属', 'b-ok') : badge('通用', 'b-dim');
+      const multi = g.items.length > 1;
+      const name = esc(g.name) + (multi ? ' <span style="color:var(--dim)">×' + g.items.length + '</span>' : '');
+      const delta = g.delta > 0.0001 ? ' <span style="color:#e6a23c">较上次 -' + fmt(g.delta) + '</span>' : '';
+      const detailId = 'pd_' + String(a.uid).replace(/\W/g, '') + '_' + gi;
+      let row = '<div style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;flex-wrap:wrap">'
+        + tag
+        + '<span style="min-width:120px">' + name + '</span>';
+      if(multi){
+        row += '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + delta
+          + ' <a href="javascript:void(0)" style="color:var(--accent,#5aa2ff);font-size:12px" onclick="togglePoolDetail(\'' + detailId + '\')">明细</a>';
+      }else{
+        const p = g.items[0];
+        row += '<span style="font-family:Consolas,monospace;color:var(--dim)">' + esc(p.id) + '</span>'
+          + '<span>剩余 ' + fmt(g.remain) + ' / 限额 ' + g.limit + '（已用 ' + fmt(g.used) + '）</span>'
+          + delta;
+      }
+      row += '</div>';
+      if(multi){
+        row += '<div id="' + detailId + '" style="display:none;margin:2px 0 0 24px">'
+          + g.items.map(p=>{
+              let d = '';
+              const before = prev[p.id];
+              if(typeof before === 'number'){
+                const diff = p.used - before;
+                if(diff > 0.0001){ d = ' <span style="color:#e6a23c">较上次 -' + fmt(diff) + '</span>'; }
+              }
+              return '<div style="font-size:12px;color:var(--dim);margin-top:3px">'
+                + '<span style="font-family:Consolas,monospace">' + esc(p.id) + '</span>'
+                + (p.desc ? '（' + esc(p.desc) + '）' : '')
+                + '：剩余 ' + fmt(p.remain) + ' / 限额 ' + p.limit + '（已用 ' + fmt(p.used) + '）' + d
+                + '</div>';
+            }).join('') + '</div>';
+      }
+      return row;
+    }).join('');
+    const snap = {};
+    (a.pools || []).forEach(p=>{ snap[p.id] = p.used; });
+    poolsSnapshot[a.uid] = snap;
+    return '<div style="margin-top:12px"><div style="font-weight:600;font-size:13px">' + esc(a.nickname || a.uid) + '</div>'
+      + (rows || '<div style="color:var(--dim);font-size:12px">无可用积分包</div>') + '</div>';
+  }).join('');
+}
+function togglePoolDetail(id){
+  const el = document.getElementById(id);
+  if(el){ el.style.display = (el.style.display === 'none') ? '' : 'none'; }
+}
+
+/* ─── 对话通道（SOLO function） ─── */
+async function loadFunction(){
+  try{
+    const r = await fetch('/admin/api/function', {cache:'no-store'});
+    const d = await r.json();
+    document.getElementById('fnSelect').innerHTML = (d.options || [])
+      .map(o=>{
+        const v = (o && o.value !== undefined) ? o.value : o;   // 兼容纯字符串数组
+        const desc = (o && o.desc) ? '（' + o.desc + '）' : '';
+        return '<option value="'+esc(v)+'"'+(v===d.current?' selected':'')+'>'+esc(v)+desc+'</option>';
+      }).join('');
+  }catch(e){
+    const st = document.getElementById('fnStatus');
+    st.style.display = '';
+    st.textContent = '读取当前通道失败：' + e.message;
+  }
+}
+async function applyFunction(){
+  const sel = document.getElementById('fnSelect');
+  const st = document.getElementById('fnStatus');
+  st.style.display = '';
+  st.className = 'login-status';
+  st.innerHTML = '<span class="spin"></span> 应用中...';
+  try{
+    const r = await fetch('/admin/api/function', {
+      method:'POST', headers:{'Content-Type':'application/json', ...authHeader()},
+      body: JSON.stringify({function: sel.value})
+    });
+    const d = await r.json();
+    if(!r.ok){ st.className = 'login-status err'; st.textContent = '切换失败：' + apiErr(d); return; }
+    st.className = 'login-status ok';
+    st.textContent = '已切换到 ' + d.current + '（后续对话立即生效）';
+  }catch(e){
+    st.className = 'login-status err';
+    st.textContent = '切换失败：' + e.message;
+  }
+}
+
+/* ─── 模型 & 倍率 ─── */
+async function loadModels(){
+  try{
+    const r = await fetch('/admin/api/models', {cache:'no-store'});
+    renderModels(await r.json());
+  }catch(e){
+    document.getElementById('modelTable').innerHTML = '<div style="color:var(--bad)">加载失败：'+esc(e.message)+'</div>';
+  }
+}
+async function refreshModels(){
+  const btn = document.getElementById('modelsRefreshBtn');
+  const st = document.getElementById('modelsNote');
+  btn.disabled = true;
+  st.textContent = '正在从上游重新拉取模型列表...';
+  try{
+    const r = await fetch('/admin/api/models/refresh', {
+      method:'POST', headers:{'Content-Type':'application/json', ...authHeader()}, body:'{}'
+    });
+    const d = await r.json();
+    if(!r.ok){ st.textContent = '刷新失败：' + apiErr(d); return; }
+    await loadModels();   // 重新渲染（会覆盖上面的临时提示）
+    st.textContent = st.textContent + ' ｜ 已于 ' + d.refreshed_at + ' 重新拉取，上游返回 ' + d.upstream_total + ' 个模型';
+  }catch(e){
+    st.textContent = '刷新失败：' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+function renderModels(d){
+  document.getElementById('modelsNote').textContent = (d.note || '')
+    + '（共 ' + (d.total || 0) + ' 个官方模型'
+    + (d.hidden_custom ? '，已隐藏 ' + d.hidden_custom + ' 个自定义模型' : '')
+    + (d.hidden_internal ? '，已隐藏 ' + d.hidden_internal + ' 个内部功能模型' : '')
+    + '）';
+  const list = d.data || [];
+  if(!list.length){
+    document.getElementById('modelTable').innerHTML = '<div style="color:var(--dim);padding:14px">无可用模型</div>';
+    return;
+  }
+  const rows = list.map(m=>{
+    const cls = m.rate_source === 'upstream' ? 'b-ok' : (m.rate_source === 'config' ? 'b-warn' : 'b-dim');
+    const rateBadge = badge(m.rate + 'x' + (m.rate_source === 'default' ? ' 默认' : ''), cls);
+    let discountNote = '';
+    if(m.discount_percent){
+      const zhe = (m.discount_percent / 10).toFixed(1).replace(/\.0$/, '');
+      discountNote = '<div style="color:var(--dim);font-size:11px;margin-top:2px">'
+        + (m.discount_matched ? '会员 ' + zhe + ' 折' : '会员 ' + zhe + ' 折（未匹配）')
+        + (m.original_rate && m.original_rate !== m.rate ? '，原价 ' + m.original_rate + 'x' : '')
+        + '</div>';
+    }
+    const ctx = fmt(m.context_length) + (m.context_from_upstream ? '' : ' *');
+    return '<tr>'
+      + '<td><div class="nick" style="font-size:13px">'+esc(m.id)+'</div>'
+      + (m.name ? '<div class="uid">'+esc(m.name)+'</div>' : '')+'</td>'
+      + '<td class="mono" title="'+(m.context_from_upstream ? '上游真实值' : '上游未返回该字段，使用默认值')+'">'+ctx+'</td>'
+      + '<td>'+rateBadge+discountNote+(m.fee_level ? ' '+badge('等级 '+m.fee_level, 'b-dim') : '')+'</td>'
+      + '</tr>';
+  }).join('');
+  document.getElementById('modelTable').innerHTML = '<table class="accts"><thead><tr>'
+    + '<th>模型</th><th>上下文窗口</th><th>倍率</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+/* ─── 调用记录 ─── */
+async function loadUsage(){
+  try{
+    const r = await fetch('/admin/api/usage', {cache:'no-store'});
+    renderUsage(await r.json());
+  }catch(e){
+    document.getElementById('usageTable').innerHTML = '<div style="color:var(--bad)">加载失败：'+esc(e.message)+'</div>';
+  }
+}
+function renderUsage(d){
+  const s = d.summary || {};
+  const card = (label, value, sub) =>
+    '<div class="card" style="padding:14px 16px"><div style="color:var(--dim);font-size:12px">'+esc(label)+'</div>'
+    + '<div style="font-size:24px;font-weight:700;margin-top:6px">'+value+'</div>'
+    + (sub ? '<div style="color:var(--dim);font-size:11px;margin-top:4px">'+esc(sub)+'</div>' : '')+'</div>';
+  const succ = s.total_calls ? Math.round((s.ok_calls || 0) * 100 / s.total_calls) : 0;
+  document.getElementById('usageSummary').innerHTML =
+      card('累计调用', fmt(s.total_calls || 0), '保留最近 '+(s.kept || 0)+' / '+(s.capacity || 0)+' 条')
+    + card('成功率', succ + '%', '成功 '+(s.ok_calls || 0)+' · 失败 '+(s.failed_calls || 0))
+    + card('平均耗时', fmt(s.avg_duration_ms || 0) + ' ms', '')
+    + card('Token 合计', fmt(s.total_tokens || 0), '入 '+(s.prompt_tokens || 0)+' · 出 '+(s.completion_tokens || 0));
+
+  const recs = d.records || [];
+  if(!recs.length){
+    document.getElementById('usageTable').innerHTML = '<div style="color:var(--dim);padding:14px">暂无调用记录（发起对话后这里会出现统计；只统计本进程启动后的请求）</div>';
+    return;
+  }
+  const rows = recs.map(x=>{
+    const st = x.ok ? badge('成功','b-ok') : badge('失败','b-bad');
+    return '<tr>'
+      + '<td class="mono">'+esc(x.time)+'</td>'
+      + '<td><div style="font-size:12px">'+esc(x.model || '-')+'</div>'
+      + '<div class="uid">'+esc(x.nickname || x.uid || '-')+'</div></td>'
+      + '<td>'+st+(x.stream ? badge('流式','b-dim') : '')+'</td>'
+      + '<td class="mono">'+(x.total_tokens ? fmt(x.total_tokens) : '-')+'</td>'
+      + '<td class="mono">'+esc((x.duration_ms || 0) + ' ms')+'</td>'
+      + '<td class="mono" style="max-width:240px;word-break:break-all">'+esc(x.err_msg || '')+'</td>'
+      + '</tr>';
+  }).join('');
+  document.getElementById('usageTable').innerHTML = '<table class="accts"><thead><tr>'
+    + '<th>时间</th><th>模型 / 账号</th><th>状态</th><th>Tokens</th><th>耗时</th><th>错误</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+/* 初始 */
+loadServerKey();
+loadAccounts();
+</script>
+</body>
+</html>

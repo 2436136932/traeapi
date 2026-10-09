@@ -1,5 +1,6 @@
-﻿<#
-    traeapi 一键启动脚本（Windows / PowerShell）
+﻿#Requires -Version 5.1
+<#
+    traeapi 一键启动脚本（Windows / PowerShell，Python 版）
 
     用法:
         .\start.ps1                 后台启动（默认，关闭终端不退出）
@@ -9,9 +10,10 @@
         .\start.ps1 -Port 8080      指定监听端口（覆盖 config.json 中的 listen）
 
     脚本会自动完成:
-        1. 读取 .env 中的 TW2A_API_KEY；缺失或仍是占位符时自动生成并写回
-        2. 源码有变更或二进制不存在时自动 go build
-        3. 启动服务并轮询 /healthz 确认可用，输出访问地址与密钥
+        1. 定位 Python 解释器（优先 .venv\Scripts\python.exe）
+        2. 读取 .env 中的 TW2A_API_KEY；缺失或仍是占位符时自动生成并写回
+        3. 按需安装缺失依赖（fastapi / uvicorn / httpx）
+        4. 启动服务并轮询 /healthz 确认可用，输出访问地址与密钥
 #>
 [CmdletBinding()]
 param(
@@ -24,32 +26,26 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
-$ExeName    = 'traeapi.exe'
-$ExePath    = Join-Path $PSScriptRoot $ExeName
-$ProcName   = 'traeapi'
 $DataDir    = Join-Path $PSScriptRoot 'data'
 $LogPath    = Join-Path $DataDir 'server.log'
 $ErrLogPath = Join-Path $DataDir 'server.err.log'
+$PidPath    = Join-Path $DataDir 'server.pid'
+$ModuleName = 'traeapi'
 
 function Write-Step($msg) { Write-Host "[*] $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "[+] $msg" -ForegroundColor Green }
 function Write-Note($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Write-Fail($msg) { Write-Host "[x] $msg" -ForegroundColor Red }
 
-function Get-RunningProcess {
-    return @(Get-Process -Name $ProcName -ErrorAction SilentlyContinue)
-}
-
-function Stop-Service {
-    $procs = Get-RunningProcess
-    if ($procs.Count -eq 0) {
-        Write-Note '没有正在运行的 traeapi 进程'
-        return
+# 定位 Python 解释器：项目内虚拟环境优先，其次 PATH 上的 python / py
+function Get-PythonExe {
+    $venv = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+    if (Test-Path -LiteralPath $venv) { return $venv }
+    foreach ($candidate in @('python', 'python3', 'py')) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
     }
-    $ids = ($procs | ForEach-Object { $_.Id }) -join ','
-    $procs | Stop-Process -Force
-    Start-Sleep -Milliseconds 600
-    Write-Ok "已停止 traeapi (PID: $ids)"
+    return $null
 }
 
 # 读取 .env 中的密钥；缺失或为占位符时生成新的并写回文件
@@ -67,7 +63,7 @@ function Get-ApiKey {
     $key = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
 
     if (Test-Path -LiteralPath $envFile) {
-        $lines = Get-Content -LiteralPath $envFile
+        $lines = @(Get-Content -LiteralPath $envFile)
         if ($lines -match '^\s*TW2A_API_KEY\s*=') {
             $lines = $lines -replace '^\s*TW2A_API_KEY\s*=.*$', "TW2A_API_KEY=$key"
             Set-Content -LiteralPath $envFile -Value $lines -Encoding ASCII
@@ -94,16 +90,29 @@ function Get-ListenPort {
     return 7864
 }
 
-# 判断是否需要重新编译：二进制不存在，或存在比它更新的 .go 源码
-function Test-NeedBuild {
-    if (-not (Test-Path -LiteralPath $ExePath)) { return $true }
-    $exeTime = (Get-Item -LiteralPath $ExePath).LastWriteTime
-    $srcDirs = @((Join-Path $PSScriptRoot 'cmd'), (Join-Path $PSScriptRoot 'internal')) |
-        Where-Object { Test-Path -LiteralPath $_ }
-    if ($srcDirs.Count -eq 0) { return $false }
-    $newer = Get-ChildItem -LiteralPath $srcDirs -Recurse -Filter *.go -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime -gt $exeTime }
-    return [bool]$newer
+# 读取已记录的 PID 并判断是否仍在运行
+function Get-RunningProcess {
+    if (-not (Test-Path -LiteralPath $PidPath)) { return @() }
+    $raw = (Get-Content -LiteralPath $PidPath -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $procId = 0
+    if (-not [int]::TryParse("$raw".Trim(), [ref]$procId)) { return @() }
+    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+    if ($proc) { return @($proc) }
+    return @()
+}
+
+function Stop-Service {
+    $procs = Get-RunningProcess
+    if ($procs.Count -eq 0) {
+        Write-Note '没有正在运行的 traeapi 进程'
+        if (Test-Path -LiteralPath $PidPath) { Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue }
+        return
+    }
+    $ids = ($procs | ForEach-Object { $_.Id }) -join ','
+    $procs | Stop-Process -Force
+    Start-Sleep -Milliseconds 800
+    if (Test-Path -LiteralPath $PidPath) { Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue }
+    Write-Ok "已停止 traeapi (PID: $ids)"
 }
 
 function Test-PortListening($p) {
@@ -115,7 +124,28 @@ function Test-PortListening($p) {
     }
 }
 
-# ─────────────────────────── 主流程 ───────────────────────────
+# 确保运行期依赖可用；缺失则用 pip 安装
+function Ensure-Dependencies($pythonExe) {
+    $probe = 'import fastapi, uvicorn, httpx'
+    & $pythonExe -c $probe 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+
+    Write-Step '检测到缺少运行依赖，开始安装（fastapi / uvicorn / httpx）...'
+    $req = Join-Path $PSScriptRoot 'requirements.txt'
+    if (Test-Path -LiteralPath $req) {
+        & $pythonExe -m pip install -r $req
+    } else {
+        & $pythonExe -m pip install fastapi uvicorn httpx
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail '依赖安装失败，请手动执行: python -m pip install fastapi uvicorn httpx'
+        return $false
+    }
+    Write-Ok '依赖安装完成'
+    return $true
+}
+
+# --------------------------- 主流程 ---------------------------
 
 if ($Stop) {
     Stop-Service
@@ -132,38 +162,32 @@ if ($running.Count -gt 0) {
     Stop-Service
 }
 
+$pythonExe = Get-PythonExe
+if (-not $pythonExe) {
+    Write-Fail '未检测到 Python，请先安装 Python 3.9+ 并加入 PATH'
+    exit 1
+}
+Write-Step "使用 Python: $pythonExe"
+
+if (-not (Ensure-Dependencies $pythonExe)) { exit 1 }
+
 $key = Get-ApiKey
 $env:TW2A_API_KEY = $key
 $listenPort = Get-ListenPort
 if ($Port -gt 0) { $env:TW2A_LISTEN = ":$Port" }
+$env:PYTHONIOENCODING = 'utf-8'
 
 if (Test-PortListening $listenPort) {
     Write-Fail "端口 $listenPort 已被其他程序占用，请先释放该端口或使用 -Port 指定其他端口"
     exit 1
 }
 
-if (Test-NeedBuild) {
-    if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-        Write-Fail '未检测到 go 命令，请先安装 Go 1.22+ 或直接放置已编译的 traeapi.exe'
-        exit 1
-    }
-    Write-Step '检测到源码变更或缺少二进制，开始编译...'
-    & go build -o $ExePath ./cmd/server
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail '编译失败'
-        exit 1
-    }
-    Write-Ok "编译完成: $ExeName"
-} else {
-    Write-Step "复用已有二进制: $ExeName"
-}
-
 if ($Foreground) {
-    Write-Ok "前台启动，按 Ctrl+C 停止"
+    Write-Ok '前台启动，按 Ctrl+C 停止'
     Write-Host "    接口地址: http://127.0.0.1:$listenPort/v1"
     Write-Host "    管理面板: http://127.0.0.1:$listenPort/admin"
     Write-Host "    鉴权密钥: $key"
-    & $ExePath
+    & $pythonExe -m $ModuleName
     exit $LASTEXITCODE
 }
 
@@ -172,11 +196,14 @@ if (-not (Test-Path -LiteralPath $DataDir)) {
 }
 
 Write-Step '正在后台启动服务...'
-$proc = Start-Process -FilePath $ExePath -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru `
+$proc = Start-Process -FilePath $pythonExe -ArgumentList @('-m', $ModuleName) `
+    -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput $LogPath -RedirectStandardError $ErrLogPath
 
+Set-Content -LiteralPath $PidPath -Value $proc.Id -Encoding ASCII
+
 $healthy = $false
-for ($i = 0; $i -lt 20; $i++) {
+for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Milliseconds 500
     if ($proc.HasExited) { break }
     try {
@@ -191,17 +218,17 @@ if ($healthy) {
     Write-Host "    接口地址: http://127.0.0.1:$listenPort/v1"
     Write-Host "    管理面板: http://127.0.0.1:$listenPort/admin"
     Write-Host "    鉴权密钥: $key"
-    Write-Host "    运行日志: $LogPath"
+    Write-Host "    运行日志: $ErrLogPath"
     Write-Host ''
-    Write-Host "    停止服务: .\start.ps1 -Stop" -ForegroundColor DarkGray
-    Write-Host "    重启服务: .\start.ps1 -Restart" -ForegroundColor DarkGray
+    Write-Host '    停止服务: .\start.ps1 -Stop' -ForegroundColor DarkGray
+    Write-Host '    重启服务: .\start.ps1 -Restart' -ForegroundColor DarkGray
     Write-Host ''
     Write-Note '下一步: 打开管理面板完成 Web 登录导入账号（当前账号池可能为空）'
 } else {
     if ($proc.HasExited) {
         Write-Fail "启动失败，进程已退出（exit code: $($proc.ExitCode)）。日志尾部："
     } else {
-        Write-Fail "进程仍在运行但健康检查未通过。日志尾部："
+        Write-Fail '进程仍在运行但健康检查未通过。日志尾部：'
     }
     foreach ($f in @($ErrLogPath, $LogPath)) {
         if ((Test-Path -LiteralPath $f) -and (Get-Item -LiteralPath $f).Length -gt 0) {

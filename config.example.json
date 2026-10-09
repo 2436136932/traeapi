@@ -1,5 +1,6 @@
 {
   "listen": ":7864",
+  "callback_port": "18080",
   "auth_dir": "./auths",
   "state_file": "./data/state.json",
   "default_model": "glm-5.2",
