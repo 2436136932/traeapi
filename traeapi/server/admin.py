@@ -76,6 +76,9 @@ def admin_credits(state: ServerState) -> JSONResponse:
             out[idx] = {
                 "uid": status.uid,
                 "nickname": status.nickname,
+                "cooling": status.cooling,
+                "disabled": status.disabled,
+                "enabled": status.enabled,
                 "error": "no auth found",
             }
             return
@@ -84,6 +87,10 @@ def admin_credits(state: ServerState) -> JSONResponse:
             "nickname": status.nickname,
             "cooling": status.cooling,
             "disabled": status.disabled,
+            # enabled 必须一并返回：否则前端无法区分「已停用（用户手动关闭）」。
+            # 早先这里漏了该字段，导致「额度监控」页只显示冷却中/已禁用，
+            # 被手动停用的账号看起来像在冷却，用户干等冷却到期也不会恢复。
+            "enabled": status.enabled,
         }
         error = ""
         try:

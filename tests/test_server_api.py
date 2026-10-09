@@ -579,6 +579,24 @@ class TestAdminCreditsPools:
         account = client.get("/admin/api/credits").json()["accounts"][0]
         assert "error" in account
 
+    def test_admin_credits_reports_enabled_flag(self):
+        """credits 接口必须返回 enabled，否则前端无法显示「已停用」。
+
+        早先漏了该字段，「额度监控」卡片只显示冷却中/已禁用，
+        被手动停用的账号看起来像在冷却，用户干等也不会恢复。
+        """
+        pool = make_pool(make_auth("u1"))
+        pool.set_enabled("u1", False, "user disabled")
+        state = make_state(pool, make_route_upstream({}))
+        client = make_test_client(state)
+
+        account = client.get("/admin/api/credits").json()["accounts"][0]
+        assert account["enabled"] is False
+
+        pool.set_enabled("u1", True, "")
+        account = client.get("/admin/api/credits").json()["accounts"][0]
+        assert account["enabled"] is True
+
     def test_admin_pools(self):
         routes = {
             C.EpEntUsage: json.dumps(

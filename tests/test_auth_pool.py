@@ -342,6 +342,59 @@ class TestPool:
     def test_set_enabled_on_missing(self):
         assert self._pool().set_enabled("nope", False, "x") is False
 
+    def test_set_enabled_clears_reason_when_no_cooldown(self):
+        """无冷却时重新启用 → reason 被清掉。"""
+        pool = self._pool()
+        pool.set_enabled("u1", False, "user disabled")
+        pool.set_enabled("u1", True, "")
+        status, _ = pool.status("u1")
+        assert status.enabled is True
+        assert status.reason == ""
+
+    def test_set_enabled_clears_stale_reason_after_cooldown_expired(self):
+        """冷却过期后重新启用 → 必须清掉残留的 reason（真实踩坑）。
+
+        until 在冷却到期后不会被清理（仍是过去的时间戳），若用
+        `until is None` 作条件，就会漏掉这种情况，面板显示
+        「已启用」却挂着 "user disabled" 的理由，自相矛盾。
+        """
+        pool = self._pool()
+        # 设一个必然已过期的冷却
+        pool.cooldown("u1", CoolKind.SOFT, -1, "429 rate limit")
+        status, _ = pool.status("u1")
+        assert status.cooling is False  # 已过期
+        assert status.until is not None  # 但时间戳仍在
+
+        pool.set_enabled("u1", False, "user disabled")
+        pool.set_enabled("u1", True, "")
+
+        status, _ = pool.status("u1")
+        assert status.enabled is True
+        assert status.cooling is False
+        assert status.reason == "", f"过期冷却的 reason 未清理: {status.reason!r}"
+        # 账号实际可用（排除积分更高的 u2/u3 单独验证 u1）
+        assert pool.pick_excluding({"u2", "u3"}).uid == "u1"
+
+    def test_set_enabled_keeps_reason_while_still_cooling(self):
+        """仍在冷却中时重新启用 → reason 不被清掉（避免丢失状态说明）。"""
+        pool = self._pool()
+        pool.cooldown("u1", CoolKind.PLAN, 3600, "plan 权益不足")
+        pool.set_enabled("u1", False, "user disabled")
+        pool.set_enabled("u1", True, "")
+        status, _ = pool.status("u1")
+        assert status.cooling is True
+        assert status.enabled is True
+        assert status.reason != ""
+
+    def test_set_enabled_keeps_reason_when_hard_disabled(self):
+        """硬禁用（session dead）时重新启用 → reason 保留。"""
+        pool = self._pool()
+        pool.disable("u2", "session dead")
+        pool.set_enabled("u2", True, "")
+        status, _ = pool.status("u2")
+        assert status.disabled is True
+        assert status.reason == "session dead"
+
     def test_set_enabled_persists_across_reload(self, tmp_path: Path):
         state_file = tmp_path / "state.json"
         pool = Pool(str(state_file))

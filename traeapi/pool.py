@@ -152,6 +152,17 @@ class _Entry:
         return True
 
 
+def _is_cooling(entry: "_Entry", now: datetime | None = None) -> bool:
+    """账号当前是否仍处于冷却中（与 Status.cooling 的计算保持一致）。
+
+    注意与「until 是否为空」区分：冷却到期后 until 仍是过去的时间戳，
+    不会被自动清理，因此不能拿 until 是否为 None 判断冷却状态。
+    """
+    if now is None:
+        now = _now()
+    return entry.until is not None and now < entry.until
+
+
 @dataclass
 class _StateEntry:
     """state.json 单账号持久化条目。"""
@@ -236,8 +247,12 @@ class Pool:
             if not enabled and reason:
                 entry.reason = reason
             if enabled:
-                # 重新启用时清掉软关闭的 reason；disabled/cooling 不动
-                if entry.reason and not entry.disabled and entry.until is None:
+                # 重新启用时清掉软关闭的 reason；disabled / 仍在冷却 的状态不动。
+                # 注意：必须判断「当前是否仍在冷却」而不是「until 是否为空」——
+                # until 在冷却到期后不会被清理（只会在签到/查询积分时按需清除），
+                # 若用 until is None 作条件，冷却过期后再启用账号会残留
+                # 旧的 reason 文本（如 "user disabled"），面板显示自相矛盾。
+                if entry.reason and not entry.disabled and not _is_cooling(entry):
                     entry.reason = ""
             self._save_locked()
             return True
@@ -344,12 +359,11 @@ class Pool:
             return [self._status_of(uid, self._by_uid[uid]) for uid in uids]
 
     def _status_of(self, uid: str, entry: _Entry) -> Status:
-        now = _now()
         return Status(
             uid=uid,
             nickname=entry.auth.nickname,
             credits=entry.credits,
-            cooling=entry.until is not None and now < entry.until,
+            cooling=_is_cooling(entry),
             until=entry.until,
             reason=entry.reason,
             disabled=entry.disabled,

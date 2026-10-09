@@ -510,10 +510,13 @@ function renderCredits(d){
     let badges = '';
     if(a.error) badges += badge('查询失败','b-bad');
     else {
+      // 停用优先于冷却展示：被手动关闭的账号不会因冷却到期而恢复，
+      // 若只显示「冷却中」会让用户误以为等等就好（实际要去账号管理页开开关）。
+      if(a.disabled) badges += badge('已禁用','b-bad');
+      else if(a.enabled === false) badges += badge('已停用','b-warn');
+      if(a.cooling) badges += badge('冷却中','b-warn');
       if(a.checked_in) badges += badge('已签到','b-ok');
       else badges += a.checkin_enable ? badge('未签到','b-warn') : badge('签到禁用','b-dim');
-      if(a.cooling) badges += badge('冷却中','b-warn');
-      if(a.disabled) badges += badge('已禁用','b-bad');
       if(a.packs>0) badges += badge(a.packs+' 权益包','b-dim');
     }
     const remainLine = a.error ? '<div style="color:var(--bad);font-size:14px">额度查询失败</div>'
